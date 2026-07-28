@@ -209,7 +209,7 @@ class Asset(TimeStampedModel):
     )
     custodian_department = models.ForeignKey(
         Department,
-        verbose_name="保管部门",
+        verbose_name="归属部门",
         null=True,
         blank=True,
         on_delete=models.PROTECT,

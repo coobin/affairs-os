@@ -235,7 +235,7 @@ onMounted(loadAssets);
               </td>
               <td><strong>{{ asset.name }}</strong><small>{{ asset.category_class_type_label }} · {{ asset.category_name }}</small></td>
               <td><StatusPill :status="asset.status" :label="asset.status_label" /></td>
-              <td><strong>{{ asset.assignee_name || "—" }}</strong><small>{{ asset.department_name || "暂无保管部门" }}</small></td>
+              <td><strong>{{ asset.assignee_name || "—" }}</strong><small>{{ asset.department_name || "暂无归属部门" }}</small></td>
               <td>{{ asset.location_name || "未设置" }}</td>
               <td><strong>{{ asset.kingdee_code || "—" }}</strong><small v-if="asset.expected_return_at" class="loan-date">应还 {{ formatDate(asset.expected_return_at) }}</small></td>
               <td><AppIcon name="chevron-right" :size="18" /></td>

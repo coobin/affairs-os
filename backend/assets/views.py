@@ -1220,7 +1220,7 @@ class ReportAssetDetailView(APIView):
         elif kind == "department":
             department = Department.objects.filter(pk=request.data.get("department_id"), is_active=True).first()
             if not department:
-                return Response({"message": "请选择有效的保管部门。"}, status=400)
+                return Response({"message": "请选择有效的归属部门。"}, status=400)
 
         for asset in assets:
             before_location = asset.current_location
@@ -1240,7 +1240,7 @@ class ReportAssetDetailView(APIView):
                 before_department = asset.custodian_department
                 asset.custodian_department = department
                 asset.save(update_fields=["custodian_department", "updated_at"])
-                change_note = f"批量分配保管部门：{department.name}"
+                change_note = f"批量分配归属部门：{department.name}"
             else:
                 custom_data = dict(asset.custom_data)
                 resolved = custom_data.pop("import_warnings", [])

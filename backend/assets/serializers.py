@@ -59,6 +59,7 @@ class LoginSerializer(serializers.Serializer):
 class UserOptionSerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
     employee_no = serializers.CharField(source="employee_profile.employee_no", default="")
+    department = serializers.SerializerMethodField()
     department_name = serializers.CharField(source="employee_profile.department.name", default="")
     management_scopes = serializers.SerializerMethodField()
 
@@ -69,6 +70,7 @@ class UserOptionSerializer(serializers.ModelSerializer):
             "username",
             "display_name",
             "employee_no",
+            "department",
             "department_name",
             "is_staff",
             "is_superuser",
@@ -77,6 +79,10 @@ class UserOptionSerializer(serializers.ModelSerializer):
 
     def get_display_name(self, obj):
         return obj.get_full_name() or obj.username
+
+    def get_department(self, obj):
+        profile = getattr(obj, "employee_profile", None)
+        return profile.department_id if profile else None
 
     def get_management_scopes(self, obj):
         return management_scopes(obj)
@@ -428,6 +434,10 @@ class AssetSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"warranty_expires_at": "保修到期日不能早于采购日期。"})
         status = attrs.get("status", getattr(self.instance, "status", Asset.Status.AVAILABLE))
         assignee = attrs.get("assigned_to", getattr(self.instance, "assigned_to", None))
+        if "assigned_to" in attrs and "custodian_department" not in attrs and assignee:
+            profile = getattr(assignee, "employee_profile", None)
+            if profile and profile.department:
+                attrs["custodian_department"] = profile.department
         if status in {Asset.Status.ASSIGNED, Asset.Status.LOANED} and not assignee:
             raise serializers.ValidationError({"assigned_to": "使用中或借用中的资产必须选择责任人。"})
         if status in {Asset.Status.AVAILABLE, Asset.Status.FROZEN, Asset.Status.DISPOSED}:

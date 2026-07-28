@@ -51,6 +51,8 @@ class AssetActionServiceTests(TestCase):
     def setUp(self):
         self.admin = User.objects.create_user("admin", password="pass", is_staff=True, is_superuser=True)
         self.employee = User.objects.create_user("employee", password="pass")
+        self.department = Department.objects.create(name="研发部", code="RND")
+        EmployeeProfile.objects.create(user=self.employee, employee_no="E001", department=self.department)
         self.category = AssetCategory.objects.create(name="笔记本电脑", code="LT")
         self.location = Location.objects.create(name="IT 库房", code="WH", kind="warehouse")
         self.asset = Asset.objects.create(
@@ -70,6 +72,7 @@ class AssetActionServiceTests(TestCase):
         )
         self.assertEqual(assigned.asset.status, Asset.Status.ASSIGNED)
         self.assertEqual(assigned.asset.assigned_to, self.employee)
+        self.assertEqual(assigned.asset.custodian_department, self.department)
 
         returned = perform_asset_action(
             asset=assigned.asset,
@@ -145,6 +148,8 @@ class AssetApiTests(TestCase):
         self.assertEqual(response.data["tasks"]["warranty_due"], 1)
 
     def test_action_endpoint_assigns_asset(self):
+        department = Department.objects.create(name="研发部", code="RND")
+        EmployeeProfile.objects.create(user=self.employee, employee_no="E001", department=department)
         response = self.client.post(
             f"/api/v1/assets/{self.asset.pk}/actions/",
             {"action": "assign", "target_user_id": self.employee.pk},
@@ -152,7 +157,23 @@ class AssetApiTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["asset"]["status"], Asset.Status.ASSIGNED)
+        self.assertEqual(response.data["asset"]["custodian_department"], department.id)
         self.assertEqual(AssetEvent.objects.filter(asset=self.asset).count(), 1)
+
+    def test_direct_assignee_change_automatically_uses_employee_department(self):
+        department = Department.objects.create(name="财务部", code="FIN")
+        EmployeeProfile.objects.create(user=self.employee, employee_no="E002", department=department)
+        response = self.client.patch(
+            f"/api/v1/assets/{self.asset.pk}/",
+            {"status": Asset.Status.ASSIGNED, "assigned_to": self.employee.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["custodian_department"], department.id)
+        self.assertEqual(response.data["department_name"], "财务部")
+        lookups = self.client.get("/api/v1/lookups/")
+        employee = next(item for item in lookups.data["users"] if item["id"] == self.employee.id)
+        self.assertEqual(employee["department"], department.id)
 
     def test_employee_cannot_open_asset_register(self):
         self.asset.assigned_to = self.employee

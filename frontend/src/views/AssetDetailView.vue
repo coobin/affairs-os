@@ -202,7 +202,7 @@ onMounted(loadAsset);
             <div class="section-title"><div><p class="eyebrow">当前信息</p><h2>资产现在在哪里</h2></div></div>
             <div class="fact-grid">
               <div><AppIcon name="user" /><span>责任人<small>{{ asset.assignee_name || "暂无责任人" }}</small></span></div>
-              <div><AppIcon name="asset" /><span>保管部门<small>{{ asset.department_name || "未设置" }}</small></span></div>
+              <div><AppIcon name="asset" /><span>归属部门<small>{{ asset.department_name || "未设置" }}</small></span></div>
               <div><AppIcon name="map" /><span>当前地点<small>{{ asset.location_name || "未设置" }}</small></span></div>
               <div><AppIcon name="calendar" /><span>预计归还<small>{{ formatDate(asset.expected_return_at) }}</small></span></div>
             </div>

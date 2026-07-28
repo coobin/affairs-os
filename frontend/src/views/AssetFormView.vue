@@ -136,7 +136,11 @@ function fieldError(name: string) {
 watch(() => form.assigned_to, (value) => {
   if (value && form.status === "available") form.status = "assigned";
   if (!value && ["assigned", "loaned"].includes(form.status)) form.status = "available";
-});
+  if (value && !loadingAsset.value) {
+    const person = props.lookups?.users.find((item) => String(item.id) === String(value));
+    if (person?.department) form.custodian_department = String(person.department);
+  }
+}, { flush: "sync" });
 watch(() => form.status, (value) => {
   if (["available", "frozen", "disposed"].includes(value)) form.assigned_to = "";
 });
@@ -258,13 +262,14 @@ onMounted(loadAsset);
               </select>
             </label>
             <label>
-              <span>保管部门</span>
+              <span>归属部门</span>
               <select v-model="form.custodian_department">
                 <option value="">暂不设置</option>
                 <option v-for="item in props.lookups?.departments || []" :key="item.id" :value="item.id">
                   {{ item.name }}
                 </option>
               </select>
+              <small class="field-hint">选择责任人时自动带出所在部门，也可以按共享或跨部门资产的实际归属调整。</small>
             </label>
           </div>
         </section>

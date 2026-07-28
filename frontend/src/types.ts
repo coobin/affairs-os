@@ -3,6 +3,7 @@ export type User = {
   username: string;
   display_name: string;
   employee_no: string;
+  department: number | null;
   department_name: string;
   is_staff: boolean;
   is_superuser: boolean;
