@@ -99,5 +99,5 @@ class EmailNotificationAdmin(admin.ModelAdmin):
         return False
 
 
-admin.site.site_header = "盘清 · 系统管理"
-admin.site.site_title = "盘清"
+admin.site.site_header = "AffairsOS · 系统管理"
+admin.site.site_title = "AffairsOS"
