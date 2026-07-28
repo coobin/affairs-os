@@ -1,0 +1,102 @@
+name: affairs-os
+
+x-backend: &backend
+  build:
+    context: ./backend
+    args:
+      PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.13.3-slim}
+      PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+  env_file:
+    - .env
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+  networks:
+    - affairs_os_internal
+
+services:
+  proxy:
+    build:
+      context: .
+      dockerfile: docker/proxy.Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${NODE_BASE_IMAGE:-node:22.16.0-alpine}
+        NGINX_BASE_IMAGE: ${NGINX_BASE_IMAGE:-nginx:1.27.4-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - affairs_os_internal
+
+  app:
+    <<: *backend
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 60
+    volumes:
+      - media_data:/app/media
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/').read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    <<: *backend
+    command: celery -A config worker -l INFO
+    environment:
+      SKIP_STARTUP: "true"
+    volumes:
+      - media_data:/app/media
+
+  beat:
+    <<: *backend
+    command: celery -A config beat -l INFO
+    environment:
+      SKIP_STARTUP: "true"
+
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:17.5-alpine}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-asset_manager}
+      POSTGRES_USER: ${POSTGRES_USER:-asset_manager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-asset_manager} -d ${POSTGRES_DB:-asset_manager}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - affairs_os_internal
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4.2-alpine}
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - affairs_os_internal
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_data:
+
+networks:
+  affairs_os_internal:
+    name: affairs_os_internal

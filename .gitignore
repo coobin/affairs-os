@@ -1,0 +1,22 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+backend/media/
+backend/staticfiles/
+frontend/node_modules/
+frontend/dist/
+.vite/
+coverage/
+backups/
+outputs/
+.codex-spreadsheet-*/
+
+# Local operator context and one-off production repair tools.
+AGENTS.md
+fix_*.py
+delete_warnings.py
