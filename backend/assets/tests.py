@@ -612,6 +612,42 @@ class PeopleImportTests(TestCase):
         self.assertEqual(profile.department.name, "信息技术部")
         self.assertEqual(Department.objects.get(code="263-11").parent.code, "263-10")
 
+    def test_import_people_syncs_assigned_asset_department(self):
+        old_department = Department.objects.create(name="旧部门", code="OLD")
+        category = AssetCategory.objects.create(name="笔记本电脑", code="LT")
+        user = User.objects.create_user("zhangsan")
+        EmployeeProfile.objects.create(
+            user=user,
+            employee_no="zhangsan",
+            department=old_department,
+        )
+        asset = Asset.objects.create(
+            asset_tag="IT-LT-2026-001",
+            category=category,
+            assigned_to=user,
+            custodian_department=old_department,
+        )
+        payload = {
+            "departments": [
+                {"source_id": "11", "name": "信息技术部", "parent_source_id": None},
+            ],
+            "users": [
+                {
+                    "username": "zhangsan",
+                    "email": "zhangsan@example.com",
+                    "full_name": "张三",
+                    "department_source_ids": ["11"],
+                    "active": True,
+                }
+            ],
+        }
+
+        with patch("sys.stdin", io.StringIO(json.dumps(payload, ensure_ascii=False))):
+            call_command("import_people", input="-")
+
+        asset.refresh_from_db()
+        self.assertEqual(asset.custodian_department.name, "信息技术部")
+
 
 class InventoryWorkflowTests(TestCase):
     def setUp(self):

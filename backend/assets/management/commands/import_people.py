@@ -5,8 +5,9 @@ import sys
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
-from assets.models import Department, EmployeeProfile
+from assets.models import Asset, Department, EmployeeProfile
 
 User = get_user_model()
 
@@ -113,10 +114,25 @@ class Command(BaseCommand):
             else:
                 updated += 1
 
+        updated_assets = 0
+        profiles = EmployeeProfile.objects.filter(
+            department__isnull=False,
+        ).select_related("user", "department")
+        for profile in profiles:
+            updated_assets += Asset.objects.filter(
+                assigned_to=profile.user,
+            ).exclude(
+                custodian_department=profile.department,
+            ).update(
+                custodian_department=profile.department,
+                updated_at=timezone.now(),
+            )
+
         self.stdout.write(
             self.style.SUCCESS(
                 "人员同步完成："
                 f"部门 {len(department_mapping)} 个，新增人员 {created} 人，"
-                f"更新人员 {updated} 人，保护管理员 {skipped_admins} 人。"
+                f"更新人员 {updated} 人，保护管理员 {skipped_admins} 人，"
+                f"同步资产归属部门 {updated_assets} 件。"
             )
         )
