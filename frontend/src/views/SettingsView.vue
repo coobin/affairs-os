@@ -21,9 +21,9 @@ const form = reactive({ name: "", code: "", kind: "office", address: "", descrip
 const labels: Record<Kind, string> = { categories: "资产类型", locations: "地点与库房", departments: "组织部门", "asset-statuses": "资产状态", "expense-categories": "费用类别", managers: "板块管理员" };
 const current = computed(() => tab.value === "managers" ? [] : rows[tab.value]);
 const filteredUsers = computed(() => {
-  const query = managerSearch.value.trim().toLowerCase();
+  const query = managerSearch.value.trim();
   if (!query) return managerUsers.value;
-  return managerUsers.value.filter((user) => [user.display_name, user.username, user.employee_no, user.department_name].some((value) => value?.toLowerCase().includes(query)));
+  return managerUsers.value.filter((user) => user.display_name.includes(query));
 });
 
 async function load(kind: BaseKind) { rows[kind] = await api<Row[]>(`/${kind}/?page_size=500`); }
@@ -81,11 +81,11 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
     </nav>
 
     <section v-if="tab === 'managers'" class="manager-settings">
-      <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2><p>勾选后立即生效。超级管理员权限不可修改。</p></div><input v-model="managerSearch" placeholder="搜索姓名、工号或部门" /></header>
+      <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2><p>勾选后立即生效。超级管理员权限不可修改。</p></div><input v-model="managerSearch" placeholder="输入中文姓名搜索" /></header>
       <div class="manager-matrix-wrap">
         <table class="manager-matrix">
           <thead><tr><th>人员</th><th>部门</th><th v-for="item in modules" :key="item.value">{{ item.label }}</th><th>状态</th></tr></thead>
-          <tbody><tr v-for="person in filteredUsers" :key="person.id"><td><strong>{{ person.display_name }}</strong><small>{{ person.employee_no || person.username }}</small></td><td>{{ person.department_name || "未设置" }}</td><td v-for="item in modules" :key="item.value"><label class="scope-check"><input type="checkbox" :checked="person.management_scopes.includes(item.value)" :disabled="person.is_superuser" @change="toggleScope(person, item.value)" /><span></span></label></td><td><span v-if="savedUser === person.id" class="saved-mark">已保存</span><span v-else :class="person.management_scopes.length ? 'manager-on' : 'manager-off'">{{ person.is_superuser ? '超级管理员' : person.management_scopes.length ? '管理员' : '普通用户' }}</span></td></tr></tbody>
+          <tbody><tr v-for="person in filteredUsers" :key="person.id"><td><strong>{{ person.display_name }}</strong></td><td>{{ person.department_name || "未设置" }}</td><td v-for="item in modules" :key="item.value"><label class="scope-check"><input type="checkbox" :checked="person.management_scopes.includes(item.value)" :disabled="person.is_superuser" @change="toggleScope(person, item.value)" /><span></span></label></td><td><span v-if="savedUser === person.id" class="saved-mark">已保存</span><span v-else :class="person.management_scopes.length ? 'manager-on' : 'manager-off'">{{ person.is_superuser ? '超级管理员' : person.management_scopes.length ? '管理员' : '普通用户' }}</span></td></tr></tbody>
         </table>
       </div>
     </section>

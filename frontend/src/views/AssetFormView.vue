@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import { api, ApiError } from "../api";
 import AppIcon from "../components/AppIcon.vue";
+import PersonSearchSelect from "../components/PersonSearchSelect.vue";
 import type { Asset, Lookups } from "../types";
 
 const props = defineProps<{ lookups: Lookups | null; assetId?: number }>();
@@ -244,12 +245,7 @@ onMounted(loadAsset);
             </label>
             <label>
               <span>责任人</span>
-              <select v-model="form.assigned_to">
-                <option value="">暂无责任人</option>
-                <option v-for="item in props.lookups?.users || []" :key="item.id" :value="item.id">
-                  {{ item.display_name }} · {{ item.employee_no || item.username }}
-                </option>
-              </select>
+              <PersonSearchSelect v-model="form.assigned_to" :users="props.lookups?.users || []" placeholder="输入中文姓名搜索" />
               <small v-if="fieldError('assigned_to')" class="field-error">{{ fieldError("assigned_to") }}</small>
             </label>
             <label>

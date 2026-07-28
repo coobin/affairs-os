@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { api, ApiError } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import AppModal from "../components/AppModal.vue";
+import PersonSearchSelect from "../components/PersonSearchSelect.vue";
 import StatusPill from "../components/StatusPill.vue";
 import type { Asset, Lookups } from "../types";
 
@@ -266,12 +267,7 @@ onMounted(loadAsset);
         <form class="action-form" @submit.prevent="submitAction">
           <label v-if="['assign', 'loan'].includes(actionType)">
             <span>责任人 <b>*</b></span>
-            <select v-model="actionForm.target_user_id" required>
-              <option value="" disabled>选择员工</option>
-              <option v-for="item in lookups?.users || []" :key="item.id" :value="item.id">
-                {{ item.display_name }} · {{ item.employee_no || item.username }} · {{ item.department_name }}
-              </option>
-            </select>
+            <PersonSearchSelect v-model="actionForm.target_user_id" :users="lookups?.users || []" required />
           </label>
           <label v-if="['accept', 'return', 'transfer', 'repair_complete'].includes(actionType)">
             <span>目标地点 <b v-if="actionType === 'transfer'">*</b></span>

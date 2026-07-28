@@ -2,7 +2,8 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { api, ApiError, download } from "../api";
 import AppIcon from "../components/AppIcon.vue";
-import type { InventoryItem, Lookups, User } from "../types";
+import PersonSearchSelect from "../components/PersonSearchSelect.vue";
+import type { InventoryItem, Lookups } from "../types";
 
 const props = defineProps<{ lookups: Lookups | null; canManage: boolean }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
@@ -96,7 +97,7 @@ onMounted(load);
         <form class="modal-body action-form" @submit.prevent="transact">
           <label><span>操作</span><select v-model="movement.action"><option value="inbound">入库</option><option value="issue">发放</option><option value="return">退回</option><option value="writeoff">报损</option></select></label>
           <label><span>数量</span><input v-model.number="movement.quantity" type="number" min="1" required /></label>
-          <label v-if="movement.action === 'issue'"><span>领用人</span><select v-model="movement.recipient_id"><option value="">不指定</option><option v-for="user in lookups?.users || []" :key="user.id" :value="user.id">{{ user.display_name }} · {{ user.employee_no }}</option></select></label>
+          <label v-if="movement.action === 'issue'"><span>领用人</span><PersonSearchSelect v-model="movement.recipient_id" :users="lookups?.users || []" placeholder="输入中文姓名搜索（可不指定）" /></label>
           <label><span>说明</span><input v-model="movement.notes" placeholder="用途、批次或原因" /></label>
           <button class="primary-button">确认{{ { inbound: "入库", issue: "发放", return: "退回", writeoff: "报损" }[movement.action] }}</button>
         </form>
