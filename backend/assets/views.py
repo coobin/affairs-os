@@ -1113,7 +1113,7 @@ class ReportsView(APIView):
                 },
                 "low_stock": InventoryItemSerializer(
                     InventoryItem.objects.filter(
-                        quantity__lte=F("minimum_quantity"),
+                        quantity__lt=F("minimum_quantity"),
                         is_active=True,
                     ).select_related("location"),
                     many=True,

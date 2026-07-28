@@ -661,6 +661,26 @@ class InventoryWorkflowTests(TestCase):
         self.assertEqual(rejected.status_code, 400)
         self.assertEqual(InventoryItem.objects.get(pk=item_id).quantity, 7)
 
+    def test_low_stock_only_when_quantity_is_below_minimum(self):
+        equal_item = InventoryItem.objects.create(
+            sku="EQUAL-001",
+            name="库存刚好充足",
+            quantity=5,
+            minimum_quantity=5,
+        )
+        low_item = InventoryItem.objects.create(
+            sku="LOW-001",
+            name="库存不足",
+            quantity=4,
+            minimum_quantity=5,
+        )
+
+        response = self.client.get("/api/v1/inventory/")
+        self.assertEqual(response.status_code, 200)
+        rows = {row["id"]: row for row in response.data}
+        self.assertFalse(rows[equal_item.id]["low_stock"])
+        self.assertTrue(rows[low_item.id]["low_stock"])
+
 
 class InventoryExcelImportExportTests(TestCase):
     def setUp(self):
@@ -931,6 +951,27 @@ class SettingsAndReportsTests(TestCase):
         reports = self.client.get("/api/v1/reports/")
         self.assertEqual(reports.status_code, 200)
         self.assertIn("quality", reports.data)
+
+    def test_report_excludes_inventory_at_guarantee_quantity(self):
+        InventoryItem.objects.create(
+            sku="EQUAL-001",
+            name="库存刚好充足",
+            quantity=5,
+            minimum_quantity=5,
+        )
+        low_item = InventoryItem.objects.create(
+            sku="LOW-001",
+            name="库存不足",
+            quantity=4,
+            minimum_quantity=5,
+        )
+
+        reports = self.client.get("/api/v1/reports/")
+        self.assertEqual(reports.status_code, 200)
+        self.assertEqual(
+            [row["id"] for row in reports.data["low_stock"]],
+            [low_item.id],
+        )
 
 
 class ScopedPermissionTests(TestCase):

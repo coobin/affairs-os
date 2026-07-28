@@ -201,7 +201,7 @@ class InventoryItemSerializer(serializers.ModelSerializer):
         read_only_fields = ("quantity",)
 
     def get_low_stock(self, obj):
-        return obj.quantity <= obj.minimum_quantity
+        return obj.quantity < obj.minimum_quantity
 
     @transaction.atomic
     def create(self, validated_data):
