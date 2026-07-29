@@ -104,3 +104,17 @@ export async function download(
   a.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export async function authenticatedBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  if (getToken()) headers.set("Authorization", `Token ${getToken()}`);
+  const response = await fetch(`/api/v1${path}`, { headers });
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearSession();
+      window.dispatchEvent(new CustomEvent("session-expired"));
+    }
+    throw new Error("文件读取失败");
+  }
+  return response.blob();
+}

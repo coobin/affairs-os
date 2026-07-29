@@ -1,18 +1,22 @@
 from datetime import date, timedelta
 from pathlib import Path
+import hashlib
 import logging
+import re
 import secrets
+import uuid
 from urllib.parse import quote, urlencode
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.http import FileResponse, HttpResponse, HttpResponseRedirect
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 import openpyxl
 from django.db import DatabaseError, transaction
-from django.db.models import Count, F, Q, Sum
+from django.db.models import Count, F, Max, Q, Sum
 from django.db.models.functions import ExtractMonth
 from django.utils import timezone
+from django.utils.http import content_disposition_header
 from rest_framework import filters, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action, api_view, permission_classes
@@ -36,11 +40,13 @@ from .models import (
     Asset,
     AssetCategory,
     AssetEvent,
+    AssetImage,
     AssetManagerRole,
     AssetRequest,
     AssetStatus,
     AdministrativeExpense,
     Contract,
+    ContractAttachment,
     Department,
     ExpenseCategory,
     InventoryItem,
@@ -56,6 +62,7 @@ from .models import (
     VehicleExpense,
 )
 from .oidc import oauth, sync_oidc_user
+from .nextcloud import NextcloudStorageError, storage as nextcloud_storage
 from .notifications import (
     notify_inventory_transaction,
     notify_request_cancelled,
@@ -76,6 +83,7 @@ from .permissions import (
 from .serializers import (
     AssetActionSerializer,
     AssetEventSerializer,
+    AssetImageSerializer,
     AssetListSerializer,
     AssetRequestSerializer,
     AssetSerializer,
@@ -83,6 +91,7 @@ from .serializers import (
     AdministrativeExpenseSerializer,
     CategorySerializer,
     ContractSerializer,
+    ContractAttachmentSerializer,
     DepartmentSerializer,
     InventoryActionSerializer,
     InventoryItemSerializer,
@@ -102,6 +111,71 @@ from .services import perform_asset_action
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+ASSET_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+CONTRACT_FILE_EXTENSIONS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".jpg", ".jpeg", ".png", ".webp", ".zip", ".rar", ".7z", ".ofd", ".wps",
+}
+ASSET_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+CONTRACT_FILE_MAX_BYTES = 100 * 1024 * 1024
+
+
+def _safe_path_part(value):
+    return re.sub(r"[^0-9A-Za-z._-]+", "-", str(value)).strip("-.") or "record"
+
+
+def _validate_upload(upload, allowed_extensions, max_bytes, label):
+    if not upload:
+        return f"请选择要上传的{label}。"
+    original_name = Path(upload.name).name
+    extension = Path(original_name).suffix.lower()
+    if extension not in allowed_extensions:
+        return f"不支持这种{label}格式。"
+    if upload.size <= 0:
+        return f"{label}内容为空。"
+    if upload.size > max_bytes:
+        return f"{label}不能超过 {max_bytes // 1024 // 1024}MB。"
+    return ""
+
+
+def _file_sha256(upload):
+    digest = hashlib.sha256()
+    for chunk in upload.chunks():
+        digest.update(chunk)
+    upload.seek(0)
+    return digest.hexdigest()
+
+
+def _remote_file_path(section, year, identifier, upload):
+    extension = Path(upload.name).suffix.lower()
+    filename = f"{uuid.uuid4().hex}{extension}"
+    return (
+        f"{settings.NEXTCLOUD_ROOT}/{section}/{year}/"
+        f"{_safe_path_part(identifier)}/{filename}"
+    )
+
+
+def _stream_remote_file(record, as_attachment):
+    remote_response = nextcloud_storage.download(record.remote_path)
+
+    def iterator():
+        try:
+            yield from remote_response.iter_content(chunk_size=64 * 1024)
+        finally:
+            remote_response.close()
+
+    response = StreamingHttpResponse(
+        iterator(),
+        content_type=record.content_type or "application/octet-stream",
+    )
+    response["Content-Length"] = str(record.size_bytes)
+    response["Content-Disposition"] = content_disposition_header(
+        as_attachment,
+        record.original_name,
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @api_view(["GET"])
@@ -221,6 +295,7 @@ class AssetViewSet(viewsets.ModelViewSet):
                 "events__to_user",
                 "events__from_location",
                 "events__to_location",
+                "images__uploaded_by",
             )
         query = self.request.query_params.get("q", "").strip()
         if query:
@@ -362,6 +437,98 @@ class AssetViewSet(viewsets.ModelViewSet):
                 metadata={"resolved_import_warnings": warnings},
             )
         return Response(AssetSerializer(asset, context={"request": request}).data)
+
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="images",
+        parser_classes=[MultiPartParser],
+    )
+    def images(self, request, pk=None):
+        asset = self.get_object()
+        if request.method == "GET":
+            return Response(
+                AssetImageSerializer(asset.images.select_related("uploaded_by"), many=True).data
+            )
+
+        if asset.images.count() >= 10:
+            return Response({"message": "每件资产最多上传 10 张图片。"}, status=400)
+        upload = request.FILES.get("file")
+        error = _validate_upload(
+            upload,
+            ASSET_IMAGE_EXTENSIONS,
+            ASSET_IMAGE_MAX_BYTES,
+            "图片",
+        )
+        if error:
+            return Response({"message": error}, status=400)
+        if not (upload.content_type or "").startswith("image/"):
+            return Response({"message": "文件内容不是可识别的图片。"}, status=400)
+
+        remote_path = _remote_file_path(
+            "assets",
+            asset.created_at.year,
+            asset.asset_tag,
+            upload,
+        )
+        try:
+            nextcloud_storage.upload(upload, remote_path)
+            try:
+                current_max = asset.images.aggregate(value=Max("sort_order"))["value"]
+                image = AssetImage.objects.create(
+                    asset=asset,
+                    remote_path=remote_path,
+                    original_name=Path(upload.name).name[:255],
+                    content_type=(upload.content_type or "")[:120],
+                    size_bytes=upload.size,
+                    sha256=_file_sha256(upload),
+                    uploaded_by=request.user,
+                    is_cover=not asset.images.exists(),
+                    sort_order=(current_max if current_max is not None else -1) + 1,
+                )
+            except Exception:
+                nextcloud_storage.delete(remote_path)
+                raise
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+
+        return Response(AssetImageSerializer(image).data, status=201)
+
+    @action(
+        detail=True,
+        methods=["get", "delete", "patch"],
+        url_path=r"images/(?P<image_id>\d+)",
+    )
+    def image_file(self, request, pk=None, image_id=None):
+        asset = self.get_object()
+        image = asset.images.filter(pk=image_id).first()
+        if not image:
+            return Response({"message": "没有找到这张资产图片。"}, status=404)
+
+        if request.method == "GET":
+            try:
+                return _stream_remote_file(image, as_attachment=False)
+            except NextcloudStorageError as exc:
+                return Response({"message": str(exc)}, status=503)
+
+        if request.method == "PATCH":
+            asset.images.exclude(pk=image.pk).update(is_cover=False)
+            image.is_cover = True
+            image.save(update_fields=["is_cover", "updated_at"])
+            return Response(AssetImageSerializer(image).data)
+
+        try:
+            nextcloud_storage.delete(image.remote_path)
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+        was_cover = image.is_cover
+        image.delete()
+        if was_cover:
+            replacement = asset.images.order_by("sort_order", "created_at").first()
+            if replacement:
+                replacement.is_cover = True
+                replacement.save(update_fields=["is_cover", "updated_at"])
+        return Response(status=204)
 
     @action(detail=True, methods=["post"], url_path="actions")
     def perform_action(self, request, pk=None):
@@ -1317,7 +1484,9 @@ class ContractViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        queryset = Contract.objects.select_related("supplier", "category", "department", "owner")
+        queryset = Contract.objects.select_related(
+            "supplier", "category", "department", "owner"
+        ).prefetch_related("attachments__uploaded_by")
         if not any(user_can_manage(self.request.user, scope) for scope in ("contracts", "expenses", "procurement")):
             return queryset.none()
         query = self.request.query_params.get("q", "").strip()
@@ -1327,6 +1496,102 @@ class ContractViewSet(viewsets.ModelViewSet):
         if status_value:
             queryset = queryset.filter(status=status_value)
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        contract = self.get_object()
+        try:
+            for attachment in contract.attachments.all():
+                nextcloud_storage.delete(attachment.remote_path)
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+        contract.delete()
+        return Response(status=204)
+
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="files",
+        parser_classes=[MultiPartParser],
+    )
+    def files(self, request, pk=None):
+        contract = self.get_object()
+        if request.method == "GET":
+            return Response(
+                ContractAttachmentSerializer(
+                    contract.attachments.select_related("uploaded_by"),
+                    many=True,
+                ).data
+            )
+
+        if contract.attachments.count() >= 30:
+            return Response({"message": "每份合同最多保存 30 个文件。"}, status=400)
+        upload = request.FILES.get("file")
+        error = _validate_upload(
+            upload,
+            CONTRACT_FILE_EXTENSIONS,
+            CONTRACT_FILE_MAX_BYTES,
+            "合同文件",
+        )
+        if error:
+            return Response({"message": error}, status=400)
+        document_type = request.data.get(
+            "document_type",
+            ContractAttachment.DocumentType.ORIGINAL,
+        )
+        if document_type not in dict(ContractAttachment.DocumentType.choices):
+            return Response({"message": "请选择正确的合同文件类别。"}, status=400)
+
+        contract_year = contract.start_date.year if contract.start_date else contract.created_at.year
+        remote_path = _remote_file_path(
+            "contracts",
+            contract_year,
+            contract.contract_no,
+            upload,
+        )
+        try:
+            nextcloud_storage.upload(upload, remote_path)
+            try:
+                attachment = ContractAttachment.objects.create(
+                    contract=contract,
+                    document_type=document_type,
+                    remote_path=remote_path,
+                    original_name=Path(upload.name).name[:255],
+                    content_type=(upload.content_type or "")[:120],
+                    size_bytes=upload.size,
+                    sha256=_file_sha256(upload),
+                    uploaded_by=request.user,
+                )
+            except Exception:
+                nextcloud_storage.delete(remote_path)
+                raise
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+
+        return Response(ContractAttachmentSerializer(attachment).data, status=201)
+
+    @action(
+        detail=True,
+        methods=["get", "delete"],
+        url_path=r"files/(?P<file_id>\d+)",
+    )
+    def file_content(self, request, pk=None, file_id=None):
+        contract = self.get_object()
+        attachment = contract.attachments.filter(pk=file_id).first()
+        if not attachment:
+            return Response({"message": "没有找到这个合同文件。"}, status=404)
+
+        if request.method == "GET":
+            try:
+                return _stream_remote_file(attachment, as_attachment=True)
+            except NextcloudStorageError as exc:
+                return Response({"message": str(exc)}, status=503)
+
+        try:
+            nextcloud_storage.delete(attachment.remote_path)
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+        attachment.delete()
+        return Response(status=204)
 
 
 class VehicleViewSet(viewsets.ModelViewSet):

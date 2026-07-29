@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
-import { api, ApiError } from "../api";
+import { api, ApiError, authenticatedBlob } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import AppModal from "../components/AppModal.vue";
 import PersonSearchSelect from "../components/PersonSearchSelect.vue";
@@ -23,6 +23,10 @@ const actionType = ref("");
 const actionLoading = ref(false);
 const actionError = ref("");
 const resolvingIssues = ref(false);
+const imageUploading = ref(false);
+const imageError = ref("");
+const imageUrls = ref<Record<number, string>>({});
+const previewImageId = ref<number | null>(null);
 const actionForm = reactive({
   target_user_id: "",
   target_location_id: "",
@@ -70,10 +74,74 @@ async function loadAsset() {
   loading.value = true;
   try {
     asset.value = await api<Asset>(`/assets/${props.assetId}/`);
+    await loadImagePreviews();
   } catch {
     error.value = "没有找到这件资产，或当前账号无权查看。";
   } finally {
     loading.value = false;
+  }
+}
+
+function clearImagePreviews() {
+  Object.values(imageUrls.value).forEach((url) => URL.revokeObjectURL(url));
+  imageUrls.value = {};
+}
+
+async function loadImagePreviews() {
+  clearImagePreviews();
+  if (!asset.value?.images.length) return;
+  const entries = await Promise.all(
+    asset.value.images.map(async (image) => {
+      try {
+        const blob = await authenticatedBlob(image.content_url);
+        return [image.id, URL.createObjectURL(blob)] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  imageUrls.value = Object.fromEntries(entries.filter((entry) => entry !== null));
+}
+
+async function uploadImages(event: Event) {
+  if (!asset.value) return;
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  imageUploading.value = true;
+  imageError.value = "";
+  try {
+    for (const file of files) {
+      const body = new FormData();
+      body.append("file", file);
+      await api(`/assets/${asset.value.id}/images/`, { method: "POST", body });
+    }
+    await loadAsset();
+  } catch (err) {
+    imageError.value = err instanceof ApiError ? err.message : "图片上传失败，请重试。";
+  } finally {
+    imageUploading.value = false;
+    input.value = "";
+  }
+}
+
+async function setCover(imageId: number) {
+  if (!asset.value) return;
+  await api(`/assets/${asset.value.id}/images/${imageId}/`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_cover: true }),
+  });
+  await loadAsset();
+}
+
+async function deleteImage(imageId: number) {
+  if (!asset.value || !window.confirm("确认删除这张资产图片？")) return;
+  try {
+    await api(`/assets/${asset.value.id}/images/${imageId}/`, { method: "DELETE" });
+    if (previewImageId.value === imageId) previewImageId.value = null;
+    await loadAsset();
+  } catch (err) {
+    imageError.value = err instanceof ApiError ? err.message : "图片删除失败，请重试。";
   }
 }
 
@@ -132,6 +200,7 @@ async function resolveImportIssues() {
 
 watch(() => props.assetId, loadAsset);
 onMounted(loadAsset);
+onBeforeUnmount(clearImagePreviews);
 </script>
 
 <template>
@@ -198,6 +267,37 @@ onMounted(loadAsset);
 
       <section class="detail-grid">
         <div class="detail-main">
+          <section class="detail-card asset-image-card">
+            <div class="section-title">
+              <div><p class="eyebrow">资产影像</p><h2>实物图片</h2></div>
+              <label v-if="canManage && (asset.images?.length || 0) < 10" class="secondary-button compact-upload">
+                <AppIcon name="upload" :size="17" />
+                {{ imageUploading ? "正在上传…" : "上传图片" }}
+                <input type="file" accept="image/jpeg,image/png,image/webp" multiple :disabled="imageUploading" @change="uploadImages" />
+              </label>
+            </div>
+            <p v-if="imageError" class="form-error">{{ imageError }}</p>
+            <div v-if="asset.images?.length" class="asset-image-strip">
+              <article v-for="image in asset.images" :key="image.id" :class="{ cover: image.is_cover }">
+                <button class="asset-image-thumb" :disabled="!imageUrls[image.id]" @click="previewImageId = image.id">
+                  <img v-if="imageUrls[image.id]" :src="imageUrls[image.id]" :alt="image.original_name" />
+                  <span v-else>图片暂时无法读取</span>
+                </button>
+                <div class="asset-image-meta">
+                  <span>{{ image.is_cover ? "封面" : image.original_name }}</span>
+                  <div v-if="canManage">
+                    <button v-if="!image.is_cover" class="text-button" @click="setCover(image.id)">设为封面</button>
+                    <button class="text-button danger" @click="deleteImage(image.id)">删除</button>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <div v-else class="image-empty-state">
+              <span>还没有实物图片</span>
+              <small>上传设备正面、铭牌或整体照片，查找资产时更直观。</small>
+            </div>
+          </section>
+
           <section class="detail-card">
             <div class="section-title"><div><p class="eyebrow">当前信息</p><h2>资产现在在哪里</h2></div></div>
             <div class="fact-grid">
@@ -294,6 +394,19 @@ onMounted(loadAsset);
             </button>
           </div>
         </form>
+      </AppModal>
+      <AppModal
+        :open="previewImageId !== null"
+        title="资产图片"
+        description="查看资产实物原图"
+        @close="previewImageId = null"
+      >
+        <img
+          v-if="previewImageId !== null && imageUrls[previewImageId]"
+          class="asset-image-preview"
+          :src="imageUrls[previewImageId]"
+          alt="资产实物图片"
+        />
       </AppModal>
     </template>
   </div>

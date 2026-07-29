@@ -18,12 +18,14 @@ from .models import (
     Asset,
     AssetCategory,
     AssetEvent,
+    AssetImage,
     AssetManagerRole,
     AssetNumberSequence,
     AssetRequest,
     AssetStatus,
     AdministrativeExpense,
     Contract,
+    ContractAttachment,
     Department,
     EmployeeProfile,
     EmailNotification,
@@ -268,6 +270,47 @@ class AssetApiTests(TestCase):
         self.assertNotIn("responsible_person", response.data["custom_data"])
         self.asset.refresh_from_db()
         self.assertNotIn("responsible_person", self.asset.custom_data)
+
+    @patch("assets.views.nextcloud_storage.delete")
+    @patch("assets.views.nextcloud_storage.upload")
+    def test_asset_image_upload_list_and_delete(self, storage_upload, storage_delete):
+        upload = SimpleUploadedFile(
+            "设备正面.png",
+            b"\x89PNG\r\n\x1a\nasset-image",
+            content_type="image/png",
+        )
+        created = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/images/",
+            {"file": upload},
+            format="multipart",
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertTrue(created.data["is_cover"])
+        self.assertEqual(created.data["original_name"], "设备正面.png")
+        storage_upload.assert_called_once()
+        image = AssetImage.objects.get(pk=created.data["id"])
+        self.assertTrue(image.remote_path.startswith("/AffairsOS/assets/"))
+
+        detail = self.client.get(f"/api/v1/assets/{self.asset.pk}/")
+        self.assertEqual(detail.data["images"][0]["id"], image.id)
+
+        deleted = self.client.delete(
+            f"/api/v1/assets/{self.asset.pk}/images/{image.pk}/"
+        )
+        self.assertEqual(deleted.status_code, 204)
+        storage_delete.assert_called_once_with(image.remote_path)
+        self.assertFalse(AssetImage.objects.filter(pk=image.pk).exists())
+
+    @patch("assets.views.nextcloud_storage.upload")
+    def test_asset_image_rejects_non_image_content_type(self, storage_upload):
+        upload = SimpleUploadedFile("伪装图片.png", b"not-an-image", content_type="text/plain")
+        response = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/images/",
+            {"file": upload},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        storage_upload.assert_not_called()
 
 
 class AssetExcelImportTests(TestCase):
@@ -1555,6 +1598,44 @@ class AdministrativePhaseTests(TestCase):
         vehicle.refresh_from_db()
         self.assertEqual(vehicle.current_mileage, 1080)
         self.assertEqual(vehicle.status, Vehicle.Status.AVAILABLE)
+
+    @patch("assets.views.nextcloud_storage.delete")
+    @patch("assets.views.nextcloud_storage.upload")
+    def test_contract_source_file_upload_and_delete(self, storage_upload, storage_delete):
+        self.client.force_authenticate(self.admin)
+        contract = Contract.objects.create(
+            contract_no="HT-2026-001",
+            name="办公服务合同",
+            category=self.category,
+            department=self.department,
+            owner=self.employee,
+            amount="1000.00",
+        )
+        upload = SimpleUploadedFile(
+            "合同源文件.docx",
+            b"contract-source",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        created = self.client.post(
+            f"/api/v1/contracts/{contract.pk}/files/",
+            {"file": upload, "document_type": "original"},
+            format="multipart",
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["document_type_label"], "合同原件")
+        storage_upload.assert_called_once()
+        attachment = ContractAttachment.objects.get(pk=created.data["id"])
+        self.assertTrue(attachment.remote_path.startswith("/AffairsOS/contracts/"))
+
+        listed = self.client.get("/api/v1/contracts/")
+        self.assertEqual(listed.data[0]["attachments"][0]["id"], attachment.id)
+
+        deleted = self.client.delete(
+            f"/api/v1/contracts/{contract.pk}/files/{attachment.pk}/"
+        )
+        self.assertEqual(deleted.status_code, 204)
+        storage_delete.assert_called_once_with(attachment.remote_path)
+        self.assertFalse(ContractAttachment.objects.filter(pk=attachment.pk).exists())
 
     def test_vehicle_expense_is_written_to_annual_ledger(self):
         vehicle = Vehicle.objects.create(plate_number="粤BTEST02", name="费用测试车", department=self.department)

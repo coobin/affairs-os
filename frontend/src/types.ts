@@ -160,6 +160,19 @@ export type AssetEvent = {
   notes: string;
 };
 
+export type AssetImage = {
+  id: number;
+  original_name: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  is_cover: boolean;
+  sort_order: number;
+  uploaded_by_name: string;
+  content_url: string;
+  created_at: string;
+};
+
 export type Asset = {
   id: number;
   asset_tag: string;
@@ -197,6 +210,7 @@ export type Asset = {
   created_at: string;
   updated_at: string;
   events: AssetEvent[];
+  images: AssetImage[];
   is_warranty_due: boolean;
 };
 
@@ -265,7 +279,8 @@ export type VehicleDispatch = { id: number; request_no: string; requester: numbe
 export type VehicleExpense = { id: number; vehicle: number; vehicle_label: string; expense_type: string; expense_type_label: string; occurred_on: string; amount: string; supplier: number | null; supplier_name: string; odometer: number | null; next_due_on: string | null; next_due_mileage: number | null; notes: string; created_at: string };
 export type AdministrativeExpense = { id: number; occurred_on: string; fiscal_year: number; category: number; category_name: string; department: number | null; department_name: string; supplier: number | null; supplier_name: string; contract: number | null; contract_name: string; amount_type: string; amount_type_label: string; amount: string; title: string; source_type: string; source_no: string; object_label: string; invoice_status: string; invoice_status_label: string; invoice_number: string; kingdee_code: string; external_id: string; sync_status: string; notes: string; created_by_name: string };
 export type ExpenseSummary = { year: number; totals: { estimated: string; approved: string; committed: string; actual: string; reversal: string; net_actual: string }; by_category: { category__name: string; total: string }[]; by_month: { month: number; total: string }[] };
-export type Contract = { id: number; contract_no: string; name: string; supplier: number | null; supplier_name: string; category: number | null; category_name: string; department: number | null; department_name: string; owner: number | null; owner_name: string; status: string; status_label: string; start_date: string | null; end_date: string | null; amount: string; renewal_notice_days: number; auto_renew: boolean; kingdee_code: string; external_id: string; notes: string; days_to_expiry: number | null };
+export type ContractAttachment = { id: number; document_type: string; document_type_label: string; original_name: string; content_type: string; size_bytes: number; sha256: string; uploaded_by_name: string; content_url: string; created_at: string };
+export type Contract = { id: number; contract_no: string; name: string; supplier: number | null; supplier_name: string; category: number | null; category_name: string; department: number | null; department_name: string; owner: number | null; owner_name: string; status: string; status_label: string; start_date: string | null; end_date: string | null; amount: string; renewal_notice_days: number; auto_renew: boolean; kingdee_code: string; external_id: string; notes: string; days_to_expiry: number | null; attachments: ContractAttachment[] };
 export type PurchaseLine = { id?: number; name: string; specification: string; quantity: string | number; unit: string; estimated_unit_price?: string | number; unit_price?: string | number; line_amount?: string };
 export type PurchaseRequest = { id: number; request_no: string; requester: number; requester_name: string; department_name: string; needed_on: string | null; reason: string; status: string; status_label: string; estimated_amount: string; category: number | null; category_name: string; handled_by_name: string; manager_notes: string; items: PurchaseLine[]; created_at: string };
 export type PurchaseOrder = { id: number; order_no: string; request: number | null; request_no: string; supplier: number; supplier_name: string; contract: number | null; contract_name: string; status: string; status_label: string; ordered_on: string | null; expected_on: string | null; received_on: string | null; total_amount: string; kingdee_code: string; external_id: string; notes: string; items: PurchaseLine[]; created_by_name: string };

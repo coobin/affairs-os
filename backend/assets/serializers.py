@@ -10,11 +10,13 @@ from .models import (
     Asset,
     AssetCategory,
     AssetEvent,
+    AssetImage,
     AssetManagerRole,
     AssetRequest,
     AssetStatus,
     AdministrativeExpense,
     Contract,
+    ContractAttachment,
     Department,
     EmployeeProfile,
     ExpenseCategory,
@@ -331,6 +333,34 @@ class AssetEventSerializer(serializers.ModelSerializer):
         return self._user_name(obj.to_user)
 
 
+class AssetImageSerializer(serializers.ModelSerializer):
+    uploaded_by_name = serializers.SerializerMethodField()
+    content_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AssetImage
+        fields = (
+            "id",
+            "original_name",
+            "content_type",
+            "size_bytes",
+            "sha256",
+            "is_cover",
+            "sort_order",
+            "uploaded_by_name",
+            "content_url",
+            "created_at",
+        )
+
+    def get_uploaded_by_name(self, obj):
+        if not obj.uploaded_by:
+            return "系统"
+        return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
+
+    def get_content_url(self, obj):
+        return f"/assets/{obj.asset_id}/images/{obj.id}/"
+
+
 class AssetSerializer(serializers.ModelSerializer):
     status_label = serializers.SerializerMethodField()
     category_name = serializers.CharField(source="category.name", read_only=True)
@@ -341,6 +371,7 @@ class AssetSerializer(serializers.ModelSerializer):
     assignee_name = serializers.SerializerMethodField()
     department_name = serializers.CharField(source="custodian_department.name", read_only=True, default="")
     events = AssetEventSerializer(many=True, read_only=True)
+    images = AssetImageSerializer(many=True, read_only=True)
     is_warranty_due = serializers.SerializerMethodField()
 
     class Meta:
@@ -382,6 +413,7 @@ class AssetSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "events",
+            "images",
             "is_warranty_due",
         )
         read_only_fields = (
@@ -501,7 +533,7 @@ class AssetListSerializer(AssetSerializer):
         fields = tuple(
             field
             for field in AssetSerializer.Meta.fields
-            if field not in {"events", "notes", "custom_data"}
+            if field not in {"events", "images", "notes", "custom_data"}
         )
 
 
@@ -671,10 +703,11 @@ class ContractSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(source="department.name", read_only=True, default="")
     owner_name = serializers.SerializerMethodField()
     days_to_expiry = serializers.SerializerMethodField()
+    attachments = serializers.SerializerMethodField()
 
     class Meta:
         model = Contract
-        fields = ("id", "contract_no", "name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "renewal_notice_days", "auto_renew", "kingdee_code", "external_id", "notes", "days_to_expiry", "created_at", "updated_at")
+        fields = ("id", "contract_no", "name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "renewal_notice_days", "auto_renew", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "created_at", "updated_at")
 
     def get_owner_name(self, obj):
         return (obj.owner.get_full_name() or obj.owner.username) if obj.owner else ""
@@ -682,12 +715,44 @@ class ContractSerializer(serializers.ModelSerializer):
     def get_days_to_expiry(self, obj):
         return (obj.end_date - date.today()).days if obj.end_date else None
 
+    def get_attachments(self, obj):
+        return ContractAttachmentSerializer(obj.attachments.all(), many=True).data
+
     def validate(self, attrs):
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end < start:
             raise serializers.ValidationError({"end_date": "结束日期不能早于开始日期。"})
         return attrs
+
+
+class ContractAttachmentSerializer(serializers.ModelSerializer):
+    document_type_label = serializers.CharField(source="get_document_type_display", read_only=True)
+    uploaded_by_name = serializers.SerializerMethodField()
+    content_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ContractAttachment
+        fields = (
+            "id",
+            "document_type",
+            "document_type_label",
+            "original_name",
+            "content_type",
+            "size_bytes",
+            "sha256",
+            "uploaded_by_name",
+            "content_url",
+            "created_at",
+        )
+
+    def get_uploaded_by_name(self, obj):
+        if not obj.uploaded_by:
+            return "系统"
+        return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
+
+    def get_content_url(self, obj):
+        return f"/contracts/{obj.contract_id}/files/{obj.id}/"
 
 
 class VehicleSerializer(serializers.ModelSerializer):

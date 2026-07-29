@@ -278,6 +278,41 @@ class Asset(TimeStampedModel):
         return f"{self.asset_tag} · {self.name}"
 
 
+class RemoteFileBase(TimeStampedModel):
+    remote_path = models.CharField("Nextcloud 路径", max_length=512, unique=True)
+    original_name = models.CharField("原文件名", max_length=255)
+    content_type = models.CharField("文件类型", max_length=120, blank=True)
+    size_bytes = models.PositiveBigIntegerField("文件大小", default=0)
+    sha256 = models.CharField("SHA-256", max_length=64, db_index=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="上传人",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+
+    class Meta:
+        abstract = True
+
+
+class AssetImage(RemoteFileBase):
+    asset = models.ForeignKey(
+        Asset,
+        verbose_name="资产",
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    is_cover = models.BooleanField("封面", default=False)
+    sort_order = models.PositiveSmallIntegerField("排序", default=0)
+
+    class Meta:
+        ordering = ["sort_order", "created_at"]
+        verbose_name = "资产图片"
+        verbose_name_plural = "资产图片"
+
+
 class AssetRequest(TimeStampedModel):
     class ItemType(models.TextChoices):
         ASSET = "asset", "资产"
@@ -770,6 +805,33 @@ class Contract(TimeStampedModel):
 
     def __str__(self):
         return f"{self.contract_no} · {self.name}"
+
+
+class ContractAttachment(RemoteFileBase):
+    class DocumentType(models.TextChoices):
+        ORIGINAL = "original", "合同原件"
+        SIGNED = "signed", "盖章扫描件"
+        SUPPLEMENT = "supplement", "补充协议"
+        QUOTATION = "quotation", "报价单"
+        OTHER = "other", "其他"
+
+    contract = models.ForeignKey(
+        Contract,
+        verbose_name="合同",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    document_type = models.CharField(
+        "文件类别",
+        max_length=20,
+        choices=DocumentType.choices,
+        default=DocumentType.ORIGINAL,
+    )
+
+    class Meta:
+        ordering = ["document_type", "-created_at"]
+        verbose_name = "合同文件"
+        verbose_name_plural = "合同文件"
 
 
 class Vehicle(TimeStampedModel):
