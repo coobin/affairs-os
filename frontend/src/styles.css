@@ -4140,21 +4140,28 @@ label b {
 .contract-ledger-shell { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: #fff; transition: opacity .15s ease; }
 .contract-ledger-shell.loading { opacity: .58; }
 .contract-ledger { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.contract-ledger th { padding: 11px 12px; border-bottom: 1px solid var(--line); background: #f4f7f9; color: #647585; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-align: left; }
-.contract-ledger th:nth-child(1) { width: 19%; }.contract-ledger th:nth-child(2) { width: 13%; }.contract-ledger th:nth-child(3) { width: 16%; }.contract-ledger th:nth-child(4) { width: 13%; }.contract-ledger th:nth-child(5) { width: 11%; }.contract-ledger th:nth-child(6) { width: 10%; }.contract-ledger th:nth-child(7) { width: 9%; }.contract-ledger th:last-child { width: 145px; }
-.contract-ledger tbody tr { position: relative; border-bottom: 1px solid #e8edf0; }
+.contract-ledger th { padding: 10px 14px; border-bottom: 1px solid var(--line); background: #f4f7f9; color: #647585; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-align: left; }
+.contract-ledger th:nth-child(1) { width: 30%; }.contract-ledger th:nth-child(2) { width: 20%; }.contract-ledger th:nth-child(3) { width: 15%; }.contract-ledger th:nth-child(4) { width: 12%; }.contract-ledger th:nth-child(5) { width: 10%; }.contract-ledger th:nth-child(6) { width: 13%; }
+.contract-ledger tbody tr { height: auto; border-bottom: 1px solid #e8edf0; }
 .contract-ledger tbody tr:last-child { border-bottom: 0; }
-.contract-ledger tbody tr::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: #c8d5df; }
-.contract-ledger tbody tr.due::before { background: #ef9b3b; }.contract-ledger tbody tr.expired::before { background: #c84c4c; }
+.contract-ledger tbody tr td:first-child { box-shadow: inset 3px 0 #c8d5df; }
+.contract-ledger tbody tr.due td:first-child { box-shadow: inset 3px 0 #ef9b3b; }.contract-ledger tbody tr.expired td:first-child { box-shadow: inset 3px 0 #c84c4c; }
 .contract-ledger tbody tr:hover { background: #f9fbfc; }
-.contract-ledger td { padding: 13px 12px; vertical-align: top; color: #314657; font-size: 13px; overflow-wrap: anywhere; }
+.contract-ledger td { height: auto; padding: 12px 14px; vertical-align: middle; color: #314657; font-size: 13px; overflow-wrap: anywhere; }
 .contract-ledger td > strong, .contract-ledger td > small { display: block; }
 .contract-ledger td > strong { color: var(--contract-ink); line-height: 1.35; }
 .contract-ledger td > small { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .contract-ledger .due-copy { color: #bd6b14; font-weight: 800; }
 .lineage-tag { display: inline-flex; margin-top: 7px; padding: 3px 7px; border-radius: 999px; background: var(--contract-cyan); color: #24716f; font-size: 10px; font-weight: 800; }
-.contract-row-actions { display: flex; flex-wrap: wrap; gap: 1px 8px; align-content: flex-start; }
-.contract-row-actions .text-button { padding: 2px 0; font-size: 12px; }
+.contract-title-line { display: flex; align-items: center; gap: 8px; }
+.contract-title-line strong { overflow: hidden; color: var(--contract-ink); font-size: 14px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.contract-title-line span { flex: 0 0 auto; padding: 3px 7px; border: 1px solid #cbdbe5; border-radius: 999px; color: #42657c; background: #f3f8fb; font-size: 9px; font-weight: 800; }
+.contract-status-line { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.contract-status-line small { color: var(--muted); font-size: 10px; }
+.contract-row-actions { display: grid; grid-template-columns: repeat(2, minmax(50px, 1fr)); gap: 6px; }
+.contract-edit-button, .contract-action-button { min-height: 30px; padding: 5px 8px; border: 1px solid #cbd8df; border-radius: 8px; background: #fff; color: #426070; font-size: 11px; font-weight: 800; cursor: pointer; }
+.contract-edit-button { border-color: var(--contract-blue); background: var(--contract-blue); color: #fff; }
+.contract-edit-button:hover { background: #195789; }.contract-action-button:hover { border-color: #8ba8b8; background: #f2f7f9; color: var(--contract-ink); }
 .modal-guidance { margin: -4px 0 18px; padding: 11px 13px; border-left: 3px solid var(--contract-blue); background: #eef6fb; color: #48677e; font-size: 12px; }
 .contract-history-modal { width: min(820px, calc(100vw - 32px)); max-height: 86vh; overflow: auto; }
 .contract-lineage { display: flex; align-items: stretch; gap: 8px; margin: 4px 0 26px; overflow-x: auto; }
@@ -4183,7 +4190,7 @@ label b {
 
 @media (max-width: 1180px) {
   .contract-filter-bar { grid-template-columns: 1fr 1fr 1fr auto; }.contract-filter-bar .text-button { grid-column: 1 / -1; justify-self: start; }
-  .contract-ledger-shell { overflow-x: auto; }.contract-ledger { min-width: 1080px; }
+  .contract-ledger-shell { overflow-x: auto; }.contract-ledger { min-width: 980px; }
 }
 @media (max-width: 680px) {
   .contract-filter-bar { grid-template-columns: 1fr; }.contract-filter-bar .text-button { grid-column: auto; }
@@ -4191,7 +4198,7 @@ label b {
   .contract-ledger { min-width: 0; }.contract-ledger thead { display: none; }.contract-ledger, .contract-ledger tbody, .contract-ledger tr, .contract-ledger td { display: block; width: 100%; }
   .contract-ledger tbody { display: grid; gap: 12px; }.contract-ledger tbody tr { padding: 14px; border: 1px solid var(--line); border-radius: 15px; background: #fff; }
   .contract-ledger td { display: grid; grid-template-columns: 108px 1fr; padding: 7px 5px; }.contract-ledger td::before { content: attr(data-label); color: var(--muted); font-size: 10px; font-weight: 800; }
-  .contract-ledger td.contract-row-actions { display: flex; padding-top: 12px; border-top: 1px solid var(--line); }.contract-ledger td.contract-row-actions::before { display: none; }
+  .contract-ledger td.contract-row-actions { display: grid; grid-template-columns: repeat(3, 1fr); padding-top: 12px; border-top: 1px solid var(--line); }.contract-ledger td.contract-row-actions::before { display: none; }
   .contract-lineage { align-items: stretch; flex-direction: column; }.contract-lineage > div:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -14px; transform: translateX(50%); }
   .contract-upload-versioned { grid-template-columns: 1fr; }
 }

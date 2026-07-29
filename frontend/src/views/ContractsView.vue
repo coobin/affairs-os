@@ -253,17 +253,15 @@ onMounted(load);
     <div v-if="error" class="error-block">{{ error }}</div>
     <section class="contract-ledger-shell" :class="{ loading }">
       <table class="contract-ledger">
-        <thead><tr><th>合同</th><th>类型 / 相对方</th><th>履约期间</th><th>金额 / 科目</th><th>负责人</th><th>状态</th><th>档案</th><th></th></tr></thead>
+        <thead><tr><th>合同与相对方</th><th>履约期间与状态</th><th>金额与科目</th><th>负责人</th><th>档案</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="item in rows" :key="item.id" :class="{ due: due.includes(item), expired: item.status === 'expired' }">
-            <td data-label="合同"><strong>{{ item.name }}</strong><small>{{ item.contract_no }}</small><span v-if="item.previous_contract_no" class="lineage-tag">续自 {{ item.previous_contract_no }}</span><span v-else-if="item.renewal_contracts.length" class="lineage-tag">已续签 {{ item.renewal_contracts[0].contract_no }}</span></td>
-            <td data-label="类型 / 相对方"><strong>{{ item.contract_type_name || '未分类' }}</strong><small>{{ item.supplier_name || '未设置供应商' }}</small></td>
-            <td data-label="履约期间"><strong>{{ item.start_date || '—' }} → {{ item.end_date || '—' }}</strong><small :class="{ 'due-copy': due.includes(item) }">{{ dueText(item) }}</small></td>
-            <td data-label="金额 / 科目"><strong>{{ money(item.amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
+            <td data-label="合同与相对方"><div class="contract-title-line"><strong>{{ item.name }}</strong><span>{{ item.contract_type_name || '未分类' }}</span></div><small>{{ item.contract_no }} · {{ item.supplier_name || '未设置供应商' }}</small><span v-if="item.previous_contract_no" class="lineage-tag">续自 {{ item.previous_contract_no }}</span><span v-else-if="item.renewal_contracts.length" class="lineage-tag">已续签 {{ item.renewal_contracts[0].contract_no }}</span></td>
+            <td data-label="履约期间与状态"><strong>{{ item.start_date || '—' }} → {{ item.end_date || '—' }}</strong><div class="contract-status-line"><span class="record-status" :data-status="item.status">{{ item.status_label }}</span><small :class="{ 'due-copy': due.includes(item) }">{{ dueText(item) }}</small></div></td>
+            <td data-label="金额与科目"><strong>{{ money(item.amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
             <td data-label="负责人"><strong>{{ item.owner_name || '未设置' }}</strong><small>{{ item.department_name || '未设置部门' }}</small></td>
-            <td data-label="状态"><span class="record-status" :data-status="item.status">{{ item.status_label }}</span><small>{{ item.auto_renew ? '约定自动续期' : '到期人工处理' }}</small></td>
-            <td data-label="档案"><strong>{{ item.attachments.length }} 个文件</strong><small>{{ item.changes.length }} 次变更</small></td>
-            <td class="contract-row-actions"><button class="text-button" @click="historyContract = item">历史</button><button class="text-button" @click="openFiles(item)">文件</button><button class="text-button" @click="openForm(item)">编辑</button><button v-if="!item.renewal_contracts.length && !['terminated'].includes(item.status)" class="text-button" @click="openRenew(item)">续签</button><button v-if="!['completed','terminated'].includes(item.status)" class="text-button" @click="openChange(item)">变更</button></td>
+            <td data-label="档案"><strong>{{ item.attachments.length }} 个文件</strong><small>{{ item.changes.length }} 次变更 · {{ item.auto_renew ? '约定续期' : '人工处理' }}</small></td>
+            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="historyContract = item">历史</button><button v-if="!item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button></td>
           </tr>
         </tbody>
       </table>
