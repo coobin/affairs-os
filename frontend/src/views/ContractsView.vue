@@ -288,28 +288,43 @@ onMounted(load);
     </section>
 
     <div v-if="showForm" class="modal-backdrop" @click.self="showForm = false">
-      <form class="modal-panel admin-form-modal" @submit.prevent="saveContract">
+      <form class="modal-panel admin-form-modal contract-form-modal" @submit.prevent="saveContract">
         <header><div><p class="eyebrow">{{ formMode === 'renew' ? `续签自 ${renewingFrom?.contract_no}` : '合同台账' }}</p><h2>{{ formMode === 'edit' ? '编辑合同基础资料' : formMode === 'renew' ? '建立下一期合同' : '登记行政合同' }}</h2></div><button type="button" class="icon-button" @click="showForm = false">×</button></header>
-        <p v-if="formMode === 'edit'" class="modal-guidance">合同期限和金额需要通过“登记变更”调整，系统会保留调整前的数据。</p>
-        <div class="form-grid">
-          <label><span>合同编号</span><input v-model="form.contract_no" required /></label>
-          <label><span>合同名称</span><input v-model="form.name" required /></label>
-          <label><span>合同类型</span><select v-model="form.contract_type"><option value="">未分类</option><option v-for="item in contractTypes.filter((x) => x.is_active)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>供应商</span><select v-model="form.supplier"><option value="">未设置</option><option v-for="item in suppliers" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>费用类别</span><select v-model="form.category"><option value="">未设置</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>归属部门</span><select v-model="form.department"><option value="">未设置</option><option v-for="item in lookups?.departments || []" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-          <label><span>负责人</span><PersonSearchSelect v-model="form.owner" :users="lookups?.users || []" /></label>
-          <label><span>开始日期</span><input v-model="form.start_date" type="date" :disabled="formMode === 'edit'" /></label>
-          <label><span>结束日期</span><input v-model="form.end_date" type="date" :disabled="formMode === 'edit'" /></label>
-          <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required :disabled="formMode === 'edit'" /></label>
-          <label><span>到期提前提醒</span><input v-model.number="form.renewal_notice_days" type="number" min="1" /><small>天</small></label>
-          <label><span>状态</span><select v-model="form.status"><option value="draft">草稿</option><option value="active">履行中</option><option value="expired">已到期未处理</option><option value="completed">已完成</option><option value="terminated">已终止</option></select></label>
-          <label class="checkbox-label"><input v-model="form.auto_renew" type="checkbox" /><span>合同约定自动续期</span></label>
-          <label><span>金蝶编码</span><input v-model="form.kingdee_code" /></label>
-          <label><span>预算系统标识</span><input v-model="form.external_id" /></label>
-          <label class="wide"><span>备注</span><textarea v-model="form.notes"></textarea></label>
+        <div class="contract-form-body">
+          <p v-if="formMode === 'edit'" class="modal-guidance">合同期限和金额请通过“登记变更”调整，系统会保留调整前的数据。</p>
+          <section class="contract-form-section">
+            <header><div><strong>基础资料</strong><span>合同身份、分类和经办信息</span></div></header>
+            <div class="contract-form-grid">
+              <label><span>合同编号</span><input v-model="form.contract_no" required /></label>
+              <label><span>合同名称</span><input v-model="form.name" required /></label>
+              <label><span>合同类型</span><select v-model="form.contract_type"><option value="">未分类</option><option v-for="item in contractTypes.filter((x) => x.is_active)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+              <label><span>供应商</span><select v-model="form.supplier"><option value="">未设置</option><option v-for="item in suppliers" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+              <label><span>费用类别</span><select v-model="form.category"><option value="">未设置</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+              <label><span>归属部门</span><select v-model="form.department"><option value="">未设置</option><option v-for="item in lookups?.departments || []" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+              <label><span>负责人</span><PersonSearchSelect v-model="form.owner" :users="lookups?.users || []" /></label>
+              <label><span>状态</span><select v-model="form.status"><option value="draft">草稿</option><option value="active">履行中</option><option value="expired">已到期未处理</option><option value="completed">已完成</option><option value="terminated">已终止</option></select></label>
+            </div>
+          </section>
+          <section class="contract-form-section">
+            <header><div><strong>履约与金额</strong><span>合同有效期、金额和到期处理方式</span></div></header>
+            <div class="contract-form-grid contract-term-grid">
+              <label><span>开始日期</span><input v-model="form.start_date" type="date" :disabled="formMode === 'edit'" /></label>
+              <label><span>结束日期</span><input v-model="form.end_date" type="date" :disabled="formMode === 'edit'" /></label>
+              <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required :disabled="formMode === 'edit'" /></label>
+              <label><span>到期提前提醒</span><span class="contract-input-suffix"><input v-model.number="form.renewal_notice_days" type="number" min="1" /><b>天</b></span></label>
+              <label class="contract-renew-toggle"><input v-model="form.auto_renew" type="checkbox" /><span><strong>合同约定自动续期</strong><small>仅记录合同条款，续签仍需人工确认并建立新合同。</small></span></label>
+            </div>
+          </section>
+          <section class="contract-form-section">
+            <header><div><strong>对接信息</strong><span>财务及预算系统编码</span></div></header>
+            <div class="contract-form-grid">
+              <label><span>金蝶编码</span><input v-model="form.kingdee_code" /></label>
+              <label><span>预算系统标识</span><input v-model="form.external_id" /></label>
+              <label class="wide"><span>备注</span><textarea v-model="form.notes"></textarea></label>
+            </div>
+          </section>
         </div>
-        <button class="primary-button full">{{ formMode === 'renew' ? '建立续签合同' : '保存合同' }}</button>
+        <footer class="contract-form-footer"><button type="button" class="secondary-button" @click="showForm = false">取消</button><button class="primary-button">{{ formMode === 'renew' ? '建立续签合同' : '保存合同' }}</button></footer>
       </form>
     </div>
 
