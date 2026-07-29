@@ -9,6 +9,8 @@ from .models import (
     AssetStatus,
     AdministrativeExpense,
     Contract,
+    ContractChange,
+    ContractType,
     Department,
     EmployeeProfile,
     EmailNotification,
@@ -75,6 +77,8 @@ admin.site.register(AssetRequest)
 admin.site.register(ExpenseCategory)
 admin.site.register(Supplier)
 admin.site.register(Contract)
+admin.site.register(ContractType)
+admin.site.register(ContractChange)
 admin.site.register(Vehicle)
 admin.site.register(VehicleDispatch)
 admin.site.register(VehicleExpense)

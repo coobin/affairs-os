@@ -26,6 +26,8 @@ from .models import (
     AdministrativeExpense,
     Contract,
     ContractAttachment,
+    ContractChange,
+    ContractType,
     Department,
     EmployeeProfile,
     EmailNotification,
@@ -1636,6 +1638,75 @@ class AdministrativePhaseTests(TestCase):
         self.assertEqual(deleted.status_code, 204)
         storage_delete.assert_called_once_with(attachment.remote_path)
         self.assertFalse(ContractAttachment.objects.filter(pk=attachment.pk).exists())
+
+    def test_contract_change_preserves_old_values_and_direct_overwrite_is_blocked(self):
+        self.client.force_authenticate(self.admin)
+        contract = Contract.objects.create(
+            contract_no="HT-CHANGE-001", name="年度服务合同", category=self.category,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="12000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        blocked = self.client.patch(
+            f"/api/v1/contracts/{contract.pk}/", {"end_date": "2027-12-31"}, format="json",
+        )
+        self.assertEqual(blocked.status_code, 400)
+        changed = self.client.post(
+            f"/api/v1/contracts/{contract.pk}/changes/",
+            {
+                "change_type": "extension", "changed_on": "2026-11-01",
+                "new_end_date": "2027-12-31", "notes": "双方签署延期协议",
+            }, format="json",
+        )
+        self.assertEqual(changed.status_code, 201)
+        contract.refresh_from_db()
+        self.assertEqual(contract.end_date, date(2027, 12, 31))
+        history = ContractChange.objects.get(pk=changed.data["id"])
+        self.assertEqual(history.old_end_date, date(2026, 12, 31))
+        self.assertEqual(history.new_end_date, date(2027, 12, 31))
+
+    def test_contract_renewal_creates_linked_record_and_completes_previous(self):
+        self.client.force_authenticate(self.admin)
+        contract_type = ContractType.objects.create(code="TEST-SERVICE", name="测试服务合同")
+        previous = Contract.objects.create(
+            contract_no="HT-2026-RENEW", name="办公服务合同", contract_type=contract_type,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="36000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        renewed = self.client.post(
+            f"/api/v1/contracts/{previous.pk}/renew/",
+            {
+                "contract_no": "HT-2027-RENEW", "name": "办公服务合同",
+                "contract_type": contract_type.id, "start_date": "2027-01-01",
+                "end_date": "2027-12-31", "amount": "38000.00", "status": "active",
+            }, format="json",
+        )
+        self.assertEqual(renewed.status_code, 201)
+        previous.refresh_from_db()
+        successor = Contract.objects.get(pk=renewed.data["id"])
+        self.assertEqual(previous.status, Contract.Status.COMPLETED)
+        self.assertEqual(successor.previous_contract, previous)
+        listed = self.client.get(f"/api/v1/contracts/?q={previous.contract_no}")
+        self.assertEqual(listed.data[0]["renewal_contracts"][0]["contract_no"], successor.contract_no)
+
+    def test_contract_search_and_type_filter(self):
+        self.client.force_authenticate(self.admin)
+        service_type = ContractType.objects.create(code="FILTER-SERVICE", name="过滤服务合同")
+        lease_type = ContractType.objects.create(code="FILTER-LEASE", name="过滤租赁合同")
+        Contract.objects.create(contract_no="SEARCH-001", name="网络运维服务", contract_type=service_type)
+        Contract.objects.create(contract_no="SEARCH-002", name="办公室租赁", contract_type=lease_type)
+        searched = self.client.get("/api/v1/contracts/?q=网络运维")
+        self.assertEqual([row["contract_no"] for row in searched.data], ["SEARCH-001"])
+        filtered = self.client.get(f"/api/v1/contracts/?contract_type={lease_type.id}")
+        self.assertEqual([row["contract_no"] for row in filtered.data], ["SEARCH-002"])
+
+    def test_daily_task_marks_unhandled_contract_expired_without_email(self):
+        contract = Contract.objects.create(
+            contract_no="HT-EXPIRED-001", name="已过期合同",
+            end_date=date.today() - timedelta(days=1), status=Contract.Status.ACTIVE,
+        )
+        send_daily_operational_notifications()
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, Contract.Status.EXPIRED)
 
     def test_vehicle_expense_is_written_to_annual_ledger(self):
         vehicle = Vehicle.objects.create(plate_number="粤BTEST02", name="费用测试车", department=self.department)

@@ -5,20 +5,20 @@ import { api, ApiError } from "../api";
 import type { User } from "../types";
 
 const props = defineProps<{ isSuperuser: boolean }>();
-type BaseKind = "categories" | "locations" | "departments" | "asset-statuses" | "expense-categories";
+type BaseKind = "categories" | "locations" | "departments" | "asset-statuses" | "expense-categories" | "contract-types";
 type Kind = BaseKind | "managers";
 type Row = { id: number; name: string; code: string; is_active: boolean; is_system?: boolean; kind?: string; address?: string; description?: string; class_type_label?: string };
 type Module = { value: string; label: string };
 
 const tab = ref<Kind>("categories");
-const rows = reactive<Record<BaseKind, Row[]>>({ categories: [], locations: [], departments: [], "asset-statuses": [], "expense-categories": [] });
+const rows = reactive<Record<BaseKind, Row[]>>({ categories: [], locations: [], departments: [], "asset-statuses": [], "expense-categories": [], "contract-types": [] });
 const managerUsers = ref<User[]>([]);
 const modules = ref<Module[]>([]);
 const managerSearch = ref("");
 const error = ref("");
 const savedUser = ref<number | null>(null);
 const form = reactive({ name: "", code: "", kind: "office", address: "", description: "", class_type: "IT" });
-const labels: Record<Kind, string> = { categories: "资产类型", locations: "地点与库房", departments: "组织部门", "asset-statuses": "资产状态", "expense-categories": "费用类别", managers: "板块管理员" };
+const labels: Record<Kind, string> = { categories: "资产类型", locations: "地点与库房", departments: "组织部门", "asset-statuses": "资产状态", "expense-categories": "费用类别", "contract-types": "合同类型", managers: "板块管理员" };
 const current = computed(() => tab.value === "managers" ? [] : rows[tab.value]);
 const filteredUsers = computed(() => {
   const query = managerSearch.value.trim();
@@ -68,14 +68,14 @@ async function toggleScope(user: User, scope: string) {
   window.setTimeout(() => { if (savedUser.value === user.id) savedUser.value = null; }, 1400);
 }
 
-onMounted(() => Promise.all((["categories", "locations", "departments", "asset-statuses", "expense-categories"] as BaseKind[]).map(load)));
+onMounted(() => Promise.all((["categories", "locations", "departments", "asset-statuses", "expense-categories", "contract-types"] as BaseKind[]).map(load)));
 </script>
 
 <template>
   <div class="page module-page">
     <header class="page-intro"><div><p class="eyebrow">基础设置</p><h1>让台账使用同一套名称</h1><p>维护分类、状态、地点、部门和分板块管理权限。</p></div></header>
     <nav class="settings-tabs">
-      <button v-for="key in (['categories','asset-statuses','locations','departments','expense-categories'] as BaseKind[])" :key="key" :class="{ active: tab === key }" @click="select(key)">{{ labels[key] }}<span>{{ rows[key].length }}</span></button>
+      <button v-for="key in (['categories','asset-statuses','locations','departments','expense-categories','contract-types'] as BaseKind[])" :key="key" :class="{ active: tab === key }" @click="select(key)">{{ labels[key] }}<span>{{ rows[key].length }}</span></button>
       <button v-if="isSuperuser" :class="{ active: tab === 'managers' }" @click="select('managers')">板块管理员<span>{{ managerUsers.filter((item) => item.management_scopes.length).length }}</span>
       </button>
     </nav>

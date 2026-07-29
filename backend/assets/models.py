@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.conf import settings
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -775,15 +777,31 @@ class Supplier(TimeStampedModel):
         return self.name
 
 
+class ContractType(TimeStampedModel):
+    name = models.CharField("合同类型", max_length=80, unique=True)
+    code = models.CharField("类型编码", max_length=32, unique=True)
+    is_active = models.BooleanField("启用", default=True)
+
+    class Meta:
+        ordering = ["code"]
+        verbose_name = "合同类型"
+        verbose_name_plural = "合同类型"
+
+    def __str__(self):
+        return self.name
+
+
 class Contract(TimeStampedModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "草稿"
         ACTIVE = "active", "履行中"
+        EXPIRED = "expired", "已到期未处理"
         COMPLETED = "completed", "已完成"
         TERMINATED = "terminated", "已终止"
 
     contract_no = models.CharField("合同编号", max_length=64, unique=True)
     name = models.CharField("合同名称", max_length=180)
+    contract_type = models.ForeignKey(ContractType, verbose_name="合同类型", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     supplier = models.ForeignKey(Supplier, verbose_name="供应商", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     category = models.ForeignKey(ExpenseCategory, verbose_name="费用类别", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     department = models.ForeignKey(Department, verbose_name="归属部门", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
@@ -794,6 +812,7 @@ class Contract(TimeStampedModel):
     amount = models.DecimalField("合同金额", max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
     renewal_notice_days = models.PositiveSmallIntegerField("到期提醒天数", default=30)
     auto_renew = models.BooleanField("自动续签", default=False)
+    previous_contract = models.ForeignKey("self", verbose_name="上一期合同", null=True, blank=True, on_delete=models.SET_NULL, related_name="renewal_contracts")
     kingdee_code = models.CharField("金蝶编码", max_length=64, blank=True, db_index=True)
     external_id = models.CharField("外部系统标识", max_length=100, blank=True, db_index=True)
     notes = models.TextField("备注", blank=True)
@@ -807,6 +826,32 @@ class Contract(TimeStampedModel):
         return f"{self.contract_no} · {self.name}"
 
 
+class ContractChange(TimeStampedModel):
+    class ChangeType(models.TextChoices):
+        EXTENSION = "extension", "延期续约"
+        SUPPLEMENT = "supplement", "补充协议"
+        AMOUNT = "amount", "金额调整"
+        TERMINATION = "termination", "提前终止"
+        OTHER = "other", "其他变更"
+
+    contract = models.ForeignKey(Contract, verbose_name="合同", on_delete=models.CASCADE, related_name="changes")
+    change_type = models.CharField("变更类型", max_length=20, choices=ChangeType.choices)
+    changed_on = models.DateField("生效日期", default=date.today)
+    old_start_date = models.DateField("原开始日期", null=True, blank=True)
+    new_start_date = models.DateField("新开始日期", null=True, blank=True)
+    old_end_date = models.DateField("原结束日期", null=True, blank=True)
+    new_end_date = models.DateField("新结束日期", null=True, blank=True)
+    old_amount = models.DecimalField("原合同金额", max_digits=14, decimal_places=2, null=True, blank=True)
+    new_amount = models.DecimalField("新合同金额", max_digits=14, decimal_places=2, null=True, blank=True)
+    notes = models.TextField("变更说明")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="登记人", null=True, blank=True, on_delete=models.SET_NULL, related_name="created_contract_changes")
+
+    class Meta:
+        ordering = ["-changed_on", "-created_at"]
+        verbose_name = "合同变更记录"
+        verbose_name_plural = "合同变更记录"
+
+
 class ContractAttachment(RemoteFileBase):
     class DocumentType(models.TextChoices):
         ORIGINAL = "original", "合同原件"
@@ -818,6 +863,14 @@ class ContractAttachment(RemoteFileBase):
     contract = models.ForeignKey(
         Contract,
         verbose_name="合同",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    change = models.ForeignKey(
+        ContractChange,
+        verbose_name="所属变更",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="attachments",
     )

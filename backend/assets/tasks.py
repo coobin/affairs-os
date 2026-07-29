@@ -77,12 +77,16 @@ def retry_pending_email_notifications():
 
 @shared_task
 def send_daily_operational_notifications():
+    today = timezone.localdate()
+    Contract.objects.filter(
+        status=Contract.Status.ACTIVE,
+        end_date__lt=today,
+    ).update(status=Contract.Status.EXPIRED, updated_at=timezone.now())
     if not settings.EMAIL_NOTIFICATIONS_ENABLED or not settings.EMAIL_HOST:
         return {"overdue": 0, "low_stock": 0, "vehicle_due": 0, "contract_due": 0}
 
     from .notifications import notification_manager_users, queue_email_notification
 
-    today = timezone.localdate()
     overdue_assets = list(
         Asset.objects.filter(
             status=Asset.Status.LOANED,
@@ -148,10 +152,14 @@ def send_daily_operational_notifications():
             body=f"{vehicle.plate_number} · {vehicle.name}\n\n" + "\n".join(due_parts) + "\n\n请及时办理续保或年检。",
         )
 
-    contract_due = list(
-        Contract.objects.filter(status=Contract.Status.ACTIVE, end_date__lte=today + timedelta(days=30))
-        .select_related("owner", "supplier")
-    )
+    contract_due = [
+        contract
+        for contract in Contract.objects.filter(
+            status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
+            end_date__isnull=False,
+        ).select_related("owner", "supplier")
+        if contract.end_date <= today + timedelta(days=contract.renewal_notice_days)
+    ]
     for contract in contract_due:
         recipients = notification_manager_users("contracts")
         if contract.owner:

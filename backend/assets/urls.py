@@ -7,6 +7,7 @@ from .views import (
     AdministrativeExpenseViewSet,
     CategoryViewSet,
     ContractViewSet,
+    ContractTypeViewSet,
     DashboardView,
     DepartmentViewSet,
     InventoryItemViewSet,
@@ -43,6 +44,7 @@ router.register("locations", LocationViewSet, basename="location")
 router.register("categories", CategoryViewSet, basename="category")
 router.register("asset-statuses", AssetStatusViewSet, basename="asset-status")
 router.register("expense-categories", ExpenseCategoryViewSet, basename="expense-category")
+router.register("contract-types", ContractTypeViewSet, basename="contract-type")
 router.register("suppliers", SupplierViewSet, basename="supplier")
 router.register("contracts", ContractViewSet, basename="contract")
 router.register("vehicles", VehicleViewSet, basename="vehicle")

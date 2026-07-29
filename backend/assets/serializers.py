@@ -17,6 +17,8 @@ from .models import (
     AdministrativeExpense,
     Contract,
     ContractAttachment,
+    ContractChange,
+    ContractType,
     Department,
     EmployeeProfile,
     ExpenseCategory,
@@ -696,18 +698,29 @@ class SupplierSerializer(serializers.ModelSerializer):
         fields = ("id", "code", "name", "channel", "channel_label", "contact_name", "contact_phone", "contact_email", "tax_number", "bank_account", "address", "notes", "is_active", "created_at", "updated_at")
 
 
+class ContractTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContractType
+        fields = ("id", "name", "code", "is_active")
+
+
 class ContractSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True, default="")
+    contract_type_name = serializers.CharField(source="contract_type.name", read_only=True, default="")
     category_name = serializers.CharField(source="category.name", read_only=True, default="")
     department_name = serializers.CharField(source="department.name", read_only=True, default="")
     owner_name = serializers.SerializerMethodField()
     days_to_expiry = serializers.SerializerMethodField()
     attachments = serializers.SerializerMethodField()
+    changes = serializers.SerializerMethodField()
+    previous_contract_no = serializers.CharField(source="previous_contract.contract_no", read_only=True, default="")
+    renewal_contracts = serializers.SerializerMethodField()
 
     class Meta:
         model = Contract
-        fields = ("id", "contract_no", "name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "renewal_notice_days", "auto_renew", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "created_at", "updated_at")
+        fields = ("id", "contract_no", "name", "contract_type", "contract_type_name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "renewal_notice_days", "auto_renew", "previous_contract", "previous_contract_no", "renewal_contracts", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "changes", "created_at", "updated_at")
+        read_only_fields = ("previous_contract",)
 
     def get_owner_name(self, obj):
         return (obj.owner.get_full_name() or obj.owner.username) if obj.owner else ""
@@ -718,11 +731,41 @@ class ContractSerializer(serializers.ModelSerializer):
     def get_attachments(self, obj):
         return ContractAttachmentSerializer(obj.attachments.all(), many=True).data
 
+    def get_changes(self, obj):
+        return ContractChangeSerializer(obj.changes.all(), many=True).data
+
+    def get_renewal_contracts(self, obj):
+        return [
+            {
+                "id": item.id,
+                "contract_no": item.contract_no,
+                "name": item.name,
+                "status": item.status,
+                "status_label": item.get_status_display(),
+                "start_date": item.start_date,
+                "end_date": item.end_date,
+            }
+            for item in obj.renewal_contracts.all()
+        ]
+
     def validate(self, attrs):
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end < start:
             raise serializers.ValidationError({"end_date": "结束日期不能早于开始日期。"})
+        if self.instance:
+            protected = {
+                "start_date": "合同期限如需调整，请使用“登记变更”。",
+                "end_date": "合同期限如需调整，请使用“登记变更”。",
+                "amount": "合同金额如需调整，请使用“登记变更”。",
+            }
+            errors = {
+                field: message
+                for field, message in protected.items()
+                if field in attrs and attrs[field] != getattr(self.instance, field)
+            }
+            if errors:
+                raise serializers.ValidationError(errors)
         return attrs
 
 
@@ -730,6 +773,7 @@ class ContractAttachmentSerializer(serializers.ModelSerializer):
     document_type_label = serializers.CharField(source="get_document_type_display", read_only=True)
     uploaded_by_name = serializers.SerializerMethodField()
     content_url = serializers.SerializerMethodField()
+    change_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractAttachment
@@ -737,6 +781,8 @@ class ContractAttachmentSerializer(serializers.ModelSerializer):
             "id",
             "document_type",
             "document_type_label",
+            "change",
+            "change_label",
             "original_name",
             "content_type",
             "size_bytes",
@@ -753,6 +799,45 @@ class ContractAttachmentSerializer(serializers.ModelSerializer):
 
     def get_content_url(self, obj):
         return f"/contracts/{obj.contract_id}/files/{obj.id}/"
+
+    def get_change_label(self, obj):
+        if not obj.change:
+            return "初始合同"
+        return f"{obj.change.changed_on:%Y-%m-%d} · {obj.change.get_change_type_display()}"
+
+
+class ContractChangeSerializer(serializers.ModelSerializer):
+    change_type_label = serializers.CharField(source="get_change_type_display", read_only=True)
+    created_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ContractChange
+        fields = (
+            "id", "change_type", "change_type_label", "changed_on",
+            "old_start_date", "new_start_date", "old_end_date", "new_end_date",
+            "old_amount", "new_amount", "notes", "created_by_name", "created_at",
+        )
+        read_only_fields = ("old_start_date", "old_end_date", "old_amount")
+
+    def get_created_by_name(self, obj):
+        if not obj.created_by:
+            return "系统"
+        return obj.created_by.get_full_name() or obj.created_by.username
+
+    def validate(self, attrs):
+        change_type = attrs.get("change_type")
+        new_start = attrs.get("new_start_date")
+        new_end = attrs.get("new_end_date")
+        new_amount = attrs.get("new_amount")
+        if change_type == ContractChange.ChangeType.EXTENSION and not new_end:
+            raise serializers.ValidationError({"new_end_date": "延期续约必须填写新的结束日期。"})
+        if change_type == ContractChange.ChangeType.AMOUNT and new_amount is None:
+            raise serializers.ValidationError({"new_amount": "金额调整必须填写新的合同金额。"})
+        if not any((new_start, new_end, new_amount is not None, change_type == ContractChange.ChangeType.TERMINATION)):
+            raise serializers.ValidationError("请至少填写一项实际变更内容。")
+        if new_start and new_end and new_end < new_start:
+            raise serializers.ValidationError({"new_end_date": "新结束日期不能早于新开始日期。"})
+        return attrs
 
 
 class VehicleSerializer(serializers.ModelSerializer):

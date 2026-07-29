@@ -47,6 +47,8 @@ from .models import (
     AdministrativeExpense,
     Contract,
     ContractAttachment,
+    ContractChange,
+    ContractType,
     Department,
     ExpenseCategory,
     InventoryItem,
@@ -92,6 +94,8 @@ from .serializers import (
     CategorySerializer,
     ContractSerializer,
     ContractAttachmentSerializer,
+    ContractChangeSerializer,
+    ContractTypeSerializer,
     DepartmentSerializer,
     InventoryActionSerializer,
     InventoryItemSerializer,
@@ -588,7 +592,7 @@ class DashboardView(APIView):
                     "pending_vehicle_dispatches": VehicleDispatch.objects.filter(status=VehicleDispatch.Status.PENDING).count() if user_can_manage(request.user, "vehicles") else 0,
                     "due_vehicle_documents": Vehicle.objects.filter(Q(insurance_expires_at__lte=today + timedelta(days=30)) | Q(inspection_expires_at__lte=today + timedelta(days=30))).exclude(status=Vehicle.Status.RETIRED).count() if user_can_manage(request.user, "vehicles") else 0,
                     "pending_purchase_requests": PurchaseRequest.objects.filter(status=PurchaseRequest.Status.PENDING).count() if user_can_manage(request.user, "procurement") else 0,
-                    "expiring_contracts": Contract.objects.filter(status=Contract.Status.ACTIVE, end_date__lte=today + timedelta(days=30)).count() if user_can_manage(request.user, "contracts") else 0,
+                    "expiring_contracts": Contract.objects.filter(status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED], end_date__lte=today + timedelta(days=30)).count() if user_can_manage(request.user, "contracts") else 0,
                 },
                 "status_distribution": [
                     {
@@ -1453,6 +1457,17 @@ class ExpenseCategoryViewSet(NoDeleteViewSet):
         return super().get_permissions()
 
 
+class ContractTypeViewSet(NoDeleteViewSet):
+    management_module = "settings"
+    queryset = ContractType.objects.all()
+    serializer_class = ContractTypeSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"}:
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
+
 class SupplierViewSet(NoDeleteViewSet):
     management_module = "procurement"
     serializer_class = SupplierSerializer
@@ -1485,17 +1500,76 @@ class ContractViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Contract.objects.select_related(
-            "supplier", "category", "department", "owner"
-        ).prefetch_related("attachments__uploaded_by")
+            "contract_type", "supplier", "category", "department", "owner", "previous_contract"
+        ).prefetch_related(
+            "attachments__uploaded_by", "attachments__change", "changes__created_by", "renewal_contracts"
+        )
         if not any(user_can_manage(self.request.user, scope) for scope in ("contracts", "expenses", "procurement")):
             return queryset.none()
         query = self.request.query_params.get("q", "").strip()
         status_value = self.request.query_params.get("status", "").strip()
+        contract_type = self.request.query_params.get("contract_type", "").strip()
         if query:
-            queryset = queryset.filter(Q(contract_no__icontains=query) | Q(name__icontains=query) | Q(supplier__name__icontains=query))
+            queryset = queryset.filter(
+                Q(contract_no__icontains=query)
+                | Q(name__icontains=query)
+                | Q(supplier__name__icontains=query)
+                | Q(owner__first_name__icontains=query)
+                | Q(owner__username__icontains=query)
+            )
         if status_value:
             queryset = queryset.filter(status=status_value)
+        if contract_type:
+            queryset = queryset.filter(contract_type_id=contract_type)
         return queryset
+
+    @action(detail=True, methods=["post"], url_path="renew")
+    def renew(self, request, pk=None):
+        previous = self.get_object()
+        if previous.renewal_contracts.exists():
+            return Response({"message": "这份合同已经生成续签合同，请进入续签合同继续处理。"}, status=400)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            renewed = serializer.save(previous_contract=previous)
+            if previous.status not in {Contract.Status.COMPLETED, Contract.Status.TERMINATED}:
+                previous.status = Contract.Status.COMPLETED
+                previous.save(update_fields=["status", "updated_at"])
+        return Response(self.get_serializer(renewed).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="changes")
+    def register_change(self, request, pk=None):
+        contract = self.get_object()
+        serializer = ContractChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        effective_start = data.get("new_start_date") or contract.start_date
+        effective_end = data.get("new_end_date") or contract.end_date
+        if effective_start and effective_end and effective_end < effective_start:
+            return Response({"errors": {"new_end_date": ["变更后的结束日期不能早于开始日期。"]}}, status=400)
+        with transaction.atomic():
+            change = ContractChange.objects.create(
+                contract=contract,
+                old_start_date=contract.start_date,
+                old_end_date=contract.end_date,
+                old_amount=contract.amount,
+                created_by=request.user,
+                **data,
+            )
+            if data.get("new_start_date"):
+                contract.start_date = data["new_start_date"]
+            if data.get("new_end_date"):
+                contract.end_date = data["new_end_date"]
+            if data.get("new_amount") is not None:
+                contract.amount = data["new_amount"]
+            if data["change_type"] == ContractChange.ChangeType.TERMINATION:
+                contract.status = Contract.Status.TERMINATED
+            elif contract.status == Contract.Status.EXPIRED and (
+                not contract.end_date or contract.end_date >= date.today()
+            ):
+                contract.status = Contract.Status.ACTIVE
+            contract.save()
+        return Response(ContractChangeSerializer(change).data, status=201)
 
     def destroy(self, request, *args, **kwargs):
         contract = self.get_object()
@@ -1540,6 +1614,12 @@ class ContractViewSet(viewsets.ModelViewSet):
         )
         if document_type not in dict(ContractAttachment.DocumentType.choices):
             return Response({"message": "请选择正确的合同文件类别。"}, status=400)
+        change = None
+        change_id = request.data.get("change_id")
+        if change_id:
+            change = contract.changes.filter(pk=change_id).first()
+            if not change:
+                return Response({"message": "没有找到对应的合同变更记录。"}, status=400)
 
         contract_year = contract.start_date.year if contract.start_date else contract.created_at.year
         remote_path = _remote_file_path(
@@ -1553,6 +1633,7 @@ class ContractViewSet(viewsets.ModelViewSet):
             try:
                 attachment = ContractAttachment.objects.create(
                     contract=contract,
+                    change=change,
                     document_type=document_type,
                     remote_path=remote_path,
                     original_name=Path(upload.name).name[:255],
