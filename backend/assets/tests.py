@@ -1685,8 +1685,23 @@ class AdministrativePhaseTests(TestCase):
         successor = Contract.objects.get(pk=renewed.data["id"])
         self.assertEqual(previous.status, Contract.Status.COMPLETED)
         self.assertEqual(successor.previous_contract, previous)
-        listed = self.client.get(f"/api/v1/contracts/?q={previous.contract_no}")
-        self.assertEqual(listed.data[0]["renewal_contracts"][0]["contract_no"], successor.contract_no)
+        third = self.client.post(
+            f"/api/v1/contracts/{successor.pk}/renew/",
+            {
+                "contract_no": "HT-2028-RENEW", "name": "办公服务合同",
+                "contract_type": contract_type.id, "start_date": "2028-01-01",
+                "end_date": "2028-12-31", "amount": "40000.00", "status": "active",
+            }, format="json",
+        )
+        self.assertEqual(third.status_code, 201)
+        latest = Contract.objects.get(pk=third.data["id"])
+        listed = self.client.get("/api/v1/contracts/?q=办公服务合同")
+        self.assertEqual([row["contract_no"] for row in listed.data], [latest.contract_no])
+        history = self.client.get(f"/api/v1/contracts/{latest.pk}/history/")
+        self.assertEqual(
+            [row["contract_no"] for row in history.data],
+            [previous.contract_no, successor.contract_no, latest.contract_no],
+        )
 
     def test_contract_search_and_type_filter(self):
         self.client.force_authenticate(self.admin)

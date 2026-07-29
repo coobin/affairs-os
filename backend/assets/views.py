@@ -1494,7 +1494,7 @@ class ContractViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        if self.action in {"list", "retrieve"}:
+        if self.action in {"list", "retrieve", "history"}:
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -1506,6 +1506,8 @@ class ContractViewSet(viewsets.ModelViewSet):
         )
         if not any(user_can_manage(self.request.user, scope) for scope in ("contracts", "expenses", "procurement")):
             return queryset.none()
+        if self.action == "list":
+            queryset = queryset.filter(renewal_contracts__isnull=True)
         query = self.request.query_params.get("q", "").strip()
         status_value = self.request.query_params.get("status", "").strip()
         contract_type = self.request.query_params.get("contract_type", "").strip()
@@ -1521,7 +1523,20 @@ class ContractViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_value)
         if contract_type:
             queryset = queryset.filter(contract_type_id=contract_type)
-        return queryset
+        return queryset.distinct()
+
+    @action(detail=True, methods=["get"], url_path="history")
+    def history(self, request, pk=None):
+        contract = self.get_object()
+        chain = []
+        visited = set()
+        current = contract
+        while current and current.pk not in visited:
+            visited.add(current.pk)
+            chain.append(current)
+            current = current.previous_contract
+        chain.reverse()
+        return Response(self.get_serializer(chain, many=True).data)
 
     @action(detail=True, methods=["post"], url_path="renew")
     def renew(self, request, pk=None):

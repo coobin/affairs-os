@@ -21,6 +21,10 @@ const editing = ref<Contract | null>(null);
 const renewingFrom = ref<Contract | null>(null);
 const selectedContract = ref<Contract | null>(null);
 const historyContract = ref<Contract | null>(null);
+const historyRecords = ref<Contract[]>([]);
+const historyIndex = ref(0);
+const historyLoading = ref(false);
+const historyError = ref("");
 const changeContract = ref<Contract | null>(null);
 const fileUploading = ref(false);
 const fileError = ref("");
@@ -45,6 +49,7 @@ const due = computed(() => rows.value.filter((item) =>
 const activeAmount = computed(() => rows.value
   .filter((item) => item.status === "active")
   .reduce((sum, item) => sum + Number(item.amount), 0));
+const activeHistory = computed(() => historyRecords.value[historyIndex.value] || null);
 const attachmentGroups = computed(() => {
   if (!selectedContract.value) return [];
   const contract = selectedContract.value;
@@ -78,7 +83,6 @@ async function load() {
     ]);
     const refresh = (current: Contract | null) => rows.value.find((item) => item.id === current?.id) || null;
     if (selectedContract.value) selectedContract.value = refresh(selectedContract.value);
-    if (historyContract.value) historyContract.value = refresh(historyContract.value);
   } catch (err) {
     error.value = err instanceof ApiError ? err.message : "合同暂时无法加载。";
   } finally {
@@ -178,6 +182,21 @@ function openFiles(item: Contract) {
   fileError.value = "";
 }
 
+async function openHistory(item: Contract) {
+  historyContract.value = item;
+  historyRecords.value = [];
+  historyLoading.value = true;
+  historyError.value = "";
+  try {
+    historyRecords.value = await api<Contract[]>(`/contracts/${item.id}/history/`);
+    historyIndex.value = Math.max(0, historyRecords.value.length - 1);
+  } catch (err) {
+    historyError.value = err instanceof ApiError ? err.message : "合同历史暂时无法加载。";
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
 async function uploadFiles(event: Event) {
   if (!selectedContract.value) return;
   const input = event.target as HTMLInputElement;
@@ -261,7 +280,7 @@ onMounted(load);
             <td data-label="金额与科目"><strong>{{ money(item.amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
             <td data-label="负责人"><strong>{{ item.owner_name || '未设置' }}</strong><small>{{ item.department_name || '未设置部门' }}</small></td>
             <td data-label="档案"><strong>{{ item.attachments.length }} 个文件</strong><small>{{ item.changes.length }} 次变更 · {{ item.auto_renew ? '约定续期' : '人工处理' }}</small></td>
-            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="historyContract = item">历史</button><button v-if="!item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button></td>
+            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="openHistory(item)">历史</button><button v-if="!item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button></td>
           </tr>
         </tbody>
       </table>
@@ -312,17 +331,34 @@ onMounted(load);
 
     <div v-if="historyContract" class="modal-backdrop" @click.self="historyContract = null">
       <section class="modal-panel contract-history-modal">
-        <header><div><p class="eyebrow">合同历史 · {{ historyContract.contract_no }}</p><h2>{{ historyContract.name }}</h2></div><button type="button" class="icon-button" @click="historyContract = null">×</button></header>
-        <div class="contract-lineage">
-          <div v-if="historyContract.previous_contract_no"><span>上一期</span><strong>{{ historyContract.previous_contract_no }}</strong></div>
-          <div class="current"><span>当前合同</span><strong>{{ historyContract.contract_no }}</strong><small>{{ historyContract.start_date || '—' }} 至 {{ historyContract.end_date || '—' }}</small></div>
-          <div v-for="renewal in historyContract.renewal_contracts" :key="renewal.id"><span>下一期</span><strong>{{ renewal.contract_no }}</strong><small>{{ renewal.start_date || '—' }} 至 {{ renewal.end_date || '—' }}</small></div>
-        </div>
-        <div class="contract-change-timeline">
-          <article v-for="change in historyContract.changes" :key="change.id">
-            <i></i><div><header><strong>{{ change.change_type_label }}</strong><time>{{ change.changed_on }}</time></header><p>{{ change.notes }}</p><dl><div v-if="change.old_end_date !== change.new_end_date && change.new_end_date"><dt>结束日期</dt><dd>{{ change.old_end_date || '—' }} → {{ change.new_end_date }}</dd></div><div v-if="change.old_amount !== change.new_amount && change.new_amount"><dt>合同金额</dt><dd>{{ money(change.old_amount || 0) }} → {{ money(change.new_amount) }}</dd></div></dl><small>{{ change.created_by_name }} · {{ historyContract.attachments.filter((file) => file.change === change.id).length }} 个关联文件</small></div>
-          </article>
-          <div v-if="!historyContract.changes.length" class="empty-state">这份合同还没有延期、调价或补充协议记录。</div>
+        <header class="modal-header"><div><p class="eyebrow">合同历史</p><h2>{{ historyContract.name }}</h2><p>按期次查看合同资料、变更记录和源文件。</p></div><button type="button" class="icon-button" @click="historyContract = null">×</button></header>
+        <div v-if="historyLoading" class="history-loading">正在读取合同历史…</div>
+        <div v-else-if="historyError" class="error-block history-error">{{ historyError }}</div>
+        <div v-else class="history-workbench">
+          <aside class="history-periods">
+            <div class="history-periods-title"><strong>合同期次</strong><span>共 {{ historyRecords.length }} 期</span></div>
+            <button v-for="(record, index) in historyRecords" :key="record.id" :class="{ active: historyIndex === index }" @click="historyIndex = index">
+              <i>{{ String(index + 1).padStart(2, '0') }}</i>
+              <span><strong>{{ record.contract_no }}</strong><small>{{ record.start_date || '未设置' }} 至 {{ record.end_date || '未设置' }}</small></span>
+              <b v-if="index === historyRecords.length - 1">当前</b>
+            </button>
+          </aside>
+          <section v-if="activeHistory" class="history-detail">
+            <header class="history-contract-head"><div><span class="record-status" :data-status="activeHistory.status">{{ activeHistory.status_label }}</span><h3>{{ activeHistory.name }}</h3><p>{{ activeHistory.contract_no }}</p></div><strong>{{ money(activeHistory.amount) }}</strong></header>
+            <dl class="history-facts">
+              <div><dt>合同类型</dt><dd>{{ activeHistory.contract_type_name || '未分类' }}</dd></div>
+              <div><dt>供应商</dt><dd>{{ activeHistory.supplier_name || '未设置' }}</dd></div>
+              <div><dt>履约期间</dt><dd>{{ activeHistory.start_date || '—' }} 至 {{ activeHistory.end_date || '—' }}</dd></div>
+              <div><dt>费用类别</dt><dd>{{ activeHistory.category_name || '未设置' }}</dd></div>
+              <div><dt>负责人</dt><dd>{{ activeHistory.owner_name || '未设置' }}</dd></div>
+              <div><dt>归属部门</dt><dd>{{ activeHistory.department_name || '未设置' }}</dd></div>
+              <div><dt>金蝶编码</dt><dd>{{ activeHistory.kingdee_code || '未设置' }}</dd></div>
+              <div><dt>到期处理</dt><dd>{{ activeHistory.auto_renew ? '合同约定自动续期' : '到期人工处理' }}</dd></div>
+            </dl>
+            <p v-if="activeHistory.notes" class="history-notes"><strong>合同备注</strong>{{ activeHistory.notes }}</p>
+            <section class="history-section"><header><div><strong>变更记录</strong><span>延期、调价、补充协议与终止记录</span></div><b>{{ activeHistory.changes.length }}</b></header><div v-if="activeHistory.changes.length" class="history-change-list"><article v-for="change in activeHistory.changes" :key="change.id"><div><strong>{{ change.change_type_label }}</strong><time>{{ change.changed_on }}</time></div><p>{{ change.notes }}</p><small v-if="change.new_end_date">结束日期：{{ change.old_end_date || '—' }} → {{ change.new_end_date }}</small><small v-if="change.new_amount">合同金额：{{ money(change.old_amount || 0) }} → {{ money(change.new_amount) }}</small></article></div><p v-else class="history-compact-empty">本期合同没有变更记录。</p></section>
+            <section class="history-section"><header><div><strong>合同文件</strong><span>原件、扫描件与本期补充文件</span></div><b>{{ activeHistory.attachments.length }}</b></header><div v-if="activeHistory.attachments.length" class="history-file-list"><button v-for="file in activeHistory.attachments" :key="file.id" @click="downloadFile(file)"><span class="file-kind">{{ file.original_name.split('.').pop()?.slice(0, 4).toUpperCase() }}</span><span><strong>{{ file.original_name }}</strong><small>{{ file.change_label }} · {{ fileSize(file.size_bytes) }}</small></span><AppIcon name="download" :size="16" /></button></div><p v-else class="history-compact-empty">本期合同没有归档文件。</p></section>
+          </section>
         </div>
       </section>
     </div>
