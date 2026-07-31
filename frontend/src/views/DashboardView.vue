@@ -147,7 +147,6 @@ onMounted(async () => {
           <p class="eyebrow">快速办理</p>
           <h2>从一个动作开始</h2>
           <button @click="emit('navigate', '/assets')"><AppIcon name="asset" />领用或归还</button>
-          <button @click="emit('navigate', '/stocktake')"><AppIcon name="scan" />开始扫码盘点</button>
           <button @click="emit('navigate', '/assets/new')"><AppIcon name="plus" />登记新到资产</button>
         </aside>
       </section>

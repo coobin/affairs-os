@@ -47,7 +47,7 @@ async function localLogin() {
       <div class="login-thesis">
         <p class="eyebrow light">ASSET REGISTER · 2026</p>
         <h1>每件资产，<br />都有清楚的去向。</h1>
-        <p>从申请、分配到归还和盘点，用公司账号进入，每一次流转都自动留痕。</p>
+        <p>从申请、分配到归还，用公司账号进入，每一次流转都自动留痕。</p>
       </div>
       <div class="tag-specimen" aria-hidden="true">
         <span class="tag-notch"></span>

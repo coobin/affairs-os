@@ -20,7 +20,6 @@ import PlaceholderView from "./views/PlaceholderView.vue";
 import ReportsView from "./views/ReportsView.vue";
 import RequestsView from "./views/RequestsView.vue";
 import SettingsView from "./views/SettingsView.vue";
-import StocktakeView from "./views/StocktakeView.vue";
 
 const user = ref<User | null>(getStoredUser());
 const path = ref(window.location.pathname);
@@ -40,7 +39,6 @@ const navItems = computed(() => [
   { path: "/procurement", label: "采购", icon: "inventory" },
   ...(hasScope("assets") ? [{ path: "/assets", label: "资产", icon: "asset" }] : []),
   ...(hasScope("inventory") ? [{ path: "/inventory", label: "库存", icon: "inventory" }] : []),
-  ...(hasScope("stocktake") ? [{ path: "/stocktake", label: "盘点", icon: "scan" }] : []),
   ...(hasScope("expenses") ? [{ path: "/expenses", label: "费用", icon: "chart" }] : []),
   ...(hasScope("contracts") ? [{ path: "/contracts", label: "合同", icon: "request" }] : []),
   ...(hasScope("reports") ? [{ path: "/reports", label: "报表", icon: "chart" }] : []),
@@ -59,7 +57,6 @@ const route = computed<{ name: string; id?: number; section?: string }>(() => {
   if (path.value === "/assets/import" && hasScope("assets")) return { name: "asset-import" };
   if (path.value === "/inventory" && hasScope("inventory")) return { name: "inventory" };
   if (path.value === "/inventory/import" && hasScope("inventory")) return { name: "inventory-import" };
-  if (path.value === "/stocktake" && hasScope("stocktake")) return { name: "stocktake" };
   if (path.value === "/reports" && hasScope("reports")) return { name: "reports" };
   if (path.value === "/settings" && hasScope("settings")) return { name: "settings" };
   const editMatch = path.value.match(/^\/assets\/(\d+)\/edit$/);
@@ -70,14 +67,21 @@ const route = computed<{ name: string; id?: number; section?: string }>(() => {
 });
 
 function navigate(to: string) {
-  if (to === path.value) return;
-  window.history.pushState({}, "", to);
-  path.value = to;
+  const destination = to === "/stocktake" ? homePath.value : to;
+  if (destination === path.value) return;
+  window.history.pushState({}, "", destination);
+  path.value = destination;
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function onPopState() {
-  path.value = window.location.pathname;
+  const destination = window.location.pathname === "/stocktake"
+    ? homePath.value
+    : window.location.pathname;
+  if (destination !== window.location.pathname) {
+    window.history.replaceState({}, "", destination);
+  }
+  path.value = destination;
 }
 
 async function loadLookups() {
@@ -131,6 +135,10 @@ onMounted(async () => {
       user.value = await api<User>("/auth/me/");
       setSession(getToken(), user.value);
       await loadLookups();
+      if (path.value === "/stocktake") {
+        window.history.replaceState({}, "", homePath.value);
+        path.value = homePath.value;
+      }
       if (!user.value?.management_scopes?.length && path.value === "/") navigate("/requests");
     } catch {
       logout();
@@ -167,9 +175,6 @@ onUnmounted(() => {
       </nav>
 
       <div class="masthead-actions">
-        <button v-if="hasScope('stocktake')" class="scan-button" @click="navigate('/stocktake')">
-          <AppIcon name="scan" :size="18" />扫码
-        </button>
         <div class="user-menu">
           <span class="avatar">{{ user.display_name.slice(0, 1) }}</span>
           <span class="user-copy">
@@ -214,11 +219,6 @@ onUnmounted(() => {
       <InventoryImportView
         v-else-if="route.name === 'inventory-import'"
         @navigate="navigate"
-      />
-      <StocktakeView
-        v-else-if="route.name === 'stocktake'"
-        :lookups="lookups"
-        :can-manage="hasScope('stocktake')"
       />
       <ReportsView
         v-else-if="route.name === 'reports'"

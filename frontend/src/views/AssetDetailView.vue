@@ -347,7 +347,6 @@ onBeforeUnmount(clearImagePreviews);
               <div><dt>金蝶编码</dt><dd>{{ asset.kingdee_code || "—" }}</dd></div>
               <div><dt>采购日期</dt><dd>{{ formatDate(asset.purchase_date) }}</dd></div>
               <div><dt>采购金额</dt><dd>{{ currency(asset.purchase_cost) }}</dd></div>
-              <div><dt>最后盘点</dt><dd>{{ formatDate(asset.last_audited_at) }}</dd></div>
             </dl>
           </section>
           <section v-if="asset.notes" class="detail-card compact-card note-card">

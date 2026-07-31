@@ -30,7 +30,7 @@ async function load(kind: BaseKind) { rows[kind] = await api<Row[]>(`/${kind}/?p
 async function loadManagers() {
   if (!props.isSuperuser) return;
   const data = await api<{ modules: Module[]; users: User[] }>("/settings/managers/");
-  modules.value = data.modules;
+  modules.value = data.modules.filter((item) => item.value !== "stocktake");
   managerUsers.value = data.users;
 }
 async function create() {
