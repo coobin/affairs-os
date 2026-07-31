@@ -97,24 +97,16 @@ class AssetActionServiceTests(TestCase):
                 target_user=self.employee,
             )
 
-    def test_frozen_asset_cannot_be_assigned_or_loaned(self):
-        self.asset.status = Asset.Status.FROZEN
-        self.asset.save(update_fields=["status", "updated_at"])
-        with self.assertRaisesMessage(ValidationError, "冻结"):
-            perform_asset_action(
-                asset=self.asset,
-                action="assign",
-                actor=self.admin,
-                target_user=self.employee,
-            )
-        with self.assertRaisesMessage(ValidationError, "冻结"):
-            perform_asset_action(
-                asset=self.asset,
-                action="loan",
-                actor=self.admin,
-                target_user=self.employee,
-                expected_return_at=date.today() + timedelta(days=1),
-            )
+    def test_non_requestable_asset_can_still_be_managed_directly(self):
+        self.asset.is_requestable = False
+        self.asset.save(update_fields=["is_requestable", "updated_at"])
+        result = perform_asset_action(
+            asset=self.asset,
+            action="assign",
+            actor=self.admin,
+            target_user=self.employee,
+        )
+        self.assertEqual(result.asset.status, Asset.Status.ASSIGNED)
 
     def test_cannot_assign_disposed_asset(self):
         self.asset.status = Asset.Status.DISPOSED
@@ -1366,9 +1358,9 @@ class AssetRequestWorkflowTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_frozen_asset_is_excluded_from_request_options(self):
-        self.asset.status = Asset.Status.FROZEN
-        self.asset.save(update_fields=["status", "updated_at"])
+    def test_non_requestable_asset_is_excluded_from_request_options(self):
+        self.asset.is_requestable = False
+        self.asset.save(update_fields=["is_requestable", "updated_at"])
         self.client.force_authenticate(self.employee)
         options = self.client.get("/api/v1/requests/device-options/")
         self.assertFalse(any(row["name"] == "笔记本电脑" for row in options.data))
@@ -1620,11 +1612,11 @@ class AdministrativePhaseTests(TestCase):
         )
         created = self.client.post(
             f"/api/v1/contracts/{contract.pk}/files/",
-            {"file": upload, "document_type": "original"},
+            {"file": upload, "document_type": "invoice"},
             format="multipart",
         )
         self.assertEqual(created.status_code, 201)
-        self.assertEqual(created.data["document_type_label"], "合同原件")
+        self.assertEqual(created.data["document_type_label"], "发票")
         storage_upload.assert_called_once()
         attachment = ContractAttachment.objects.get(pk=created.data["id"])
         self.assertTrue(attachment.remote_path.startswith("/AffairsOS/contracts/"))

@@ -55,7 +55,7 @@ HEADER_ALIASES = {
 
 STATUS_ALIASES = {
     "在库": Asset.Status.AVAILABLE,
-    "冻结": Asset.Status.FROZEN,
+    "冻结": Asset.Status.AVAILABLE,
     "在库可用": Asset.Status.AVAILABLE,
     "库存": Asset.Status.AVAILABLE,
     "使用中": Asset.Status.ASSIGNED,
@@ -404,6 +404,9 @@ def parse_asset_workbook(file_obj):
         if existing:
             seen_existing_ids.add(existing.pk)
         imported_status = status
+        is_requestable = status_text != "冻结"
+        if not is_requestable:
+            warnings.append("原“冻结”状态已转为“在库”，并关闭员工申请")
         assignee_text = _text(raw.get("assignee"))
         if (
             not existing
@@ -443,6 +446,7 @@ def parse_asset_workbook(file_obj):
                     "wired_mac": _text(raw.get("wired_mac")),
                     "wireless_mac": _text(raw.get("wireless_mac")),
                     "status": imported_status,
+                    "is_requestable": is_requestable,
                     "original_status": status,
                     "assignee": assignee,
                     "assignee_text": assignee_text,

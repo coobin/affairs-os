@@ -149,13 +149,11 @@ class AssetStatus(TimeStampedModel):
 class Asset(TimeStampedModel):
     class Status:
         AVAILABLE = "available"
-        FROZEN = "frozen"
         LOANED = "loaned"
         ASSIGNED = "assigned"
         DISPOSED = "disposed"
         choices = (
             (AVAILABLE, "在库"),
-            (FROZEN, "冻结"),
             (LOANED, "借用中"),
             (ASSIGNED, "使用中"),
             (DISPOSED, "报废"),
@@ -193,6 +191,7 @@ class Asset(TimeStampedModel):
         default=Status.AVAILABLE,
         db_index=True,
     )
+    is_requestable = models.BooleanField("允许员工申请", default=True, db_index=True)
     current_location = models.ForeignKey(
         Location,
         verbose_name="当前地点",
@@ -858,6 +857,7 @@ class ContractAttachment(RemoteFileBase):
         SIGNED = "signed", "盖章扫描件"
         SUPPLEMENT = "supplement", "补充协议"
         QUOTATION = "quotation", "报价单"
+        INVOICE = "invoice", "发票"
         OTHER = "other", "其他"
 
     contract = models.ForeignKey(

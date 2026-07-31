@@ -73,7 +73,7 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
 
 <template>
   <div class="page module-page">
-    <header class="page-intro"><div><p class="eyebrow">基础设置</p><h1>让台账使用同一套名称</h1><p>维护分类、状态、地点、部门和分板块管理权限。</p></div></header>
+    <header class="page-intro"><div><p class="eyebrow">基础设置</p><h1>让台账使用同一套名称</h1></div></header>
     <nav class="settings-tabs">
       <button v-for="key in (['categories','asset-statuses','locations','departments','expense-categories','contract-types'] as BaseKind[])" :key="key" :class="{ active: tab === key }" @click="select(key)">{{ labels[key] }}<span>{{ rows[key].length }}</span></button>
       <button v-if="isSuperuser" :class="{ active: tab === 'managers' }" @click="select('managers')">板块管理员<span>{{ managerUsers.filter((item) => item.management_scopes.length).length }}</span>
@@ -81,7 +81,7 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
     </nav>
 
     <section v-if="tab === 'managers'" class="manager-settings">
-      <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2><p>勾选后立即生效。超级管理员权限不可修改。</p></div><input v-model="managerSearch" placeholder="输入中文姓名搜索" /></header>
+      <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2></div><input v-model="managerSearch" placeholder="输入中文姓名搜索" /></header>
       <div class="manager-matrix-wrap">
         <table class="manager-matrix">
           <thead><tr><th>人员</th><th>部门</th><th v-for="item in modules" :key="item.value">{{ item.label }}</th><th>状态</th></tr></thead>

@@ -81,7 +81,6 @@ async function downloadTemplate() {
         <button class="back-link" @click="emit('navigate', '/inventory')"><AppIcon name="arrow-left" :size="16" />返回库存</button>
         <p class="eyebrow">批量建库</p>
         <h1>从 Excel 导入库存</h1>
-        <p>先预览检查，确认后再一次性写入库存和流水。</p>
       </div>
       <button class="secondary-button" @click="downloadTemplate"><AppIcon name="download" :size="18" />下载库存模板</button>
     </header>
@@ -101,7 +100,6 @@ async function downloadTemplate() {
         <div class="import-step">01</div>
         <div class="import-upload-copy">
           <h2>选择库存表</h2>
-          <p>支持 .xlsx，单次最多 2,000 行、5MB。编码留空时自动生成；填写已有编码时更新原库存品。</p>
         </div>
         <label class="file-picker">
           <input type="file" accept=".xlsx" @change="selectFile" />

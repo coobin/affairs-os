@@ -1115,11 +1115,6 @@ textarea {
   background: #e8f4ef;
 }
 
-.status-frozen {
-  color: #62717c;
-  background: #e7ecef;
-}
-
 .status-loaned,
 .status-pending,
 .status-inspection {
@@ -1466,6 +1461,36 @@ textarea {
   color: #465661;
   font-size: 0.78rem;
   font-weight: 650;
+}
+
+.form-grid label.checkbox-field {
+  min-height: 44px;
+  align-self: end;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: row;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-dark);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.form-grid label.checkbox-field input {
+  width: 17px;
+  min-height: 17px;
+  margin: 0;
+  accent-color: var(--blue);
+}
+
+.request-closed-badge {
+  padding: 4px 8px;
+  color: #89552c;
+  border: 1px solid #ebcfb7;
+  border-radius: 999px;
+  background: #fff5eb;
+  font-size: 0.68rem;
+  font-weight: 700;
 }
 
 label b {

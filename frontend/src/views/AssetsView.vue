@@ -134,7 +134,6 @@ onMounted(loadAssets);
       <div>
         <p class="eyebrow">资产台账 · {{ total }} 件</p>
         <h1>每件资产，都能找到</h1>
-        <p>按编号、序列号、型号或责任人搜索。</p>
       </div>
       <div class="page-actions">
         <button v-if="hasFilters" class="secondary-button" @click="clearFilters">清空条件</button>

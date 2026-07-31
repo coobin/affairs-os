@@ -399,6 +399,7 @@ class AssetSerializer(serializers.ModelSerializer):
             "wireless_mac",
             "status",
             "status_label",
+            "is_requestable",
             "current_location",
             "location_name",
             "assigned_to",
@@ -474,7 +475,7 @@ class AssetSerializer(serializers.ModelSerializer):
                 attrs["custodian_department"] = profile.department
         if status in {Asset.Status.ASSIGNED, Asset.Status.LOANED} and not assignee:
             raise serializers.ValidationError({"assigned_to": "使用中或借用中的资产必须选择责任人。"})
-        if status in {Asset.Status.AVAILABLE, Asset.Status.FROZEN, Asset.Status.DISPOSED}:
+        if status in {Asset.Status.AVAILABLE, Asset.Status.DISPOSED}:
             attrs["assigned_to"] = None
             attrs["expected_return_at"] = None
         return attrs
@@ -637,7 +638,11 @@ class AssetRequestSerializer(serializers.ModelSerializer):
             attrs["expected_return_at"] = None
         else:
             requested_name = str(attrs.get("requested_name") or "").strip()
-            if not Asset.objects.filter(category__name=requested_name, status=Asset.Status.AVAILABLE).exists():
+            if not Asset.objects.filter(
+                category__name=requested_name,
+                status=Asset.Status.AVAILABLE,
+                is_requestable=True,
+            ).exists():
                 raise serializers.ValidationError({"requested_name": "这种资产当前没有可分配库存。"})
             attrs["requested_name"] = requested_name
             attrs["inventory_item"] = None

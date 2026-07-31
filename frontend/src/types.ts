@@ -194,6 +194,7 @@ export type Asset = {
   wireless_mac: string;
   status: string;
   status_label: string;
+  is_requestable: boolean;
   current_location: number | null;
   location_name: string;
   assigned_to: number | null;

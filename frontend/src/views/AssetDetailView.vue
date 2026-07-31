@@ -47,7 +47,6 @@ const availableActions = computed(() => {
   if (!asset.value) return [];
   const rules: Record<string, string[]> = {
     available: ["assign", "loan", "transfer", "dispose"],
-    frozen: ["transfer", "dispose"],
     assigned: ["return", "transfer", "dispose"],
     loaned: ["return", "transfer", "dispose"],
     disposed: [],
@@ -246,6 +245,7 @@ onBeforeUnmount(clearImagePreviews);
           <div class="title-row">
             <p class="eyebrow">{{ asset.category_class_type_label }} · {{ asset.category_name }} · {{ asset.category_code }}</p>
             <StatusPill :status="asset.status" :label="asset.status_label" />
+            <span v-if="!asset.is_requestable" class="request-closed-badge">不可申请</span>
           </div>
           <h1>{{ asset.name }}</h1>
           <p>资产类型：{{ asset.category_name }}</p>
@@ -269,7 +269,7 @@ onBeforeUnmount(clearImagePreviews);
         <div class="detail-main">
           <section class="detail-card asset-image-card">
             <div class="section-title">
-              <div><p class="eyebrow">资产影像</p><h2>实物图片</h2></div>
+              <div><h2>资产影像</h2></div>
               <label v-if="canManage && (asset.images?.length || 0) < 10" class="secondary-button compact-upload">
                 <AppIcon name="upload" :size="17" />
                 {{ imageUploading ? "正在上传…" : "上传图片" }}
@@ -293,13 +293,12 @@ onBeforeUnmount(clearImagePreviews);
               </article>
             </div>
             <div v-else class="image-empty-state">
-              <span>还没有实物图片</span>
-              <small>上传设备正面、铭牌或整体照片，查找资产时更直观。</small>
+              <span>还没有资产影像</span>
             </div>
           </section>
 
           <section class="detail-card">
-            <div class="section-title"><div><p class="eyebrow">当前信息</p><h2>资产现在在哪里</h2></div></div>
+            <div class="section-title"><div><h2>当前信息</h2></div></div>
             <div class="fact-grid">
               <div><AppIcon name="user" /><span>责任人<small>{{ asset.assignee_name || "暂无责任人" }}</small></span></div>
               <div><AppIcon name="asset" /><span>归属部门<small>{{ asset.department_name || "未设置" }}</small></span></div>
@@ -309,7 +308,7 @@ onBeforeUnmount(clearImagePreviews);
           </section>
 
           <section class="detail-card">
-            <div class="section-title"><div><p class="eyebrow">流转记录</p><h2>资产时间线</h2></div><span>{{ asset.events.length }} 条</span></div>
+            <div class="section-title"><div><h2>流转记录</h2></div><span>{{ asset.events.length }} 条</span></div>
             <div v-if="asset.events.length" class="event-timeline">
               <article v-for="event in asset.events" :key="event.id">
                 <div class="event-track"><i></i></div>
@@ -398,14 +397,13 @@ onBeforeUnmount(clearImagePreviews);
       <AppModal
         :open="previewImageId !== null"
         title="资产图片"
-        description="查看资产实物原图"
         @close="previewImageId = null"
       >
         <img
           v-if="previewImageId !== null && imageUrls[previewImageId]"
           class="asset-image-preview"
           :src="imageUrls[previewImageId]"
-          alt="资产实物图片"
+          alt="资产影像"
         />
       </AppModal>
     </template>

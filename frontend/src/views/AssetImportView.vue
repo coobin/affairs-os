@@ -78,7 +78,6 @@ async function downloadTemplate() {
         </button>
         <p class="eyebrow">批量登记</p>
         <h1>从 Excel 导入资产</h1>
-        <p>兼容你现有的 IT 资产统计表，先检查、再正式写入。</p>
       </div>
       <button class="secondary-button" @click="downloadTemplate">
         <AppIcon name="download" :size="18" />下载模板
@@ -104,7 +103,6 @@ async function downloadTemplate() {
         <div class="import-step">01</div>
         <div class="import-upload-copy">
           <h2>选择资产表</h2>
-          <p>支持 .xlsx，单次最多 2,000 行、5MB。资产编号由系统生成；相同序列号或金蝶编码会更新原记录。</p>
         </div>
         <label class="file-picker">
           <input type="file" accept=".xlsx" @change="selectFile" />

@@ -732,7 +732,10 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="device-options")
     def device_options(self, request):
         asset_rows = (
-            Asset.objects.filter(status=Asset.Status.AVAILABLE)
+            Asset.objects.filter(
+                status=Asset.Status.AVAILABLE,
+                is_requestable=True,
+            )
             .values("category_id", "category__name")
             .annotate(available_count=Count("id"))
             .order_by("category__name")
@@ -743,7 +746,7 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
                 "item_type": AssetRequest.ItemType.ASSET,
                 "item_id": row["category_id"],
                 "name": row["category__name"],
-                "description": "资产 · 具体设备由管理员分配",
+                "description": "资产",
                 "available_count": row["available_count"],
                 "unit": "件",
             }
@@ -773,6 +776,7 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
         assets = Asset.objects.filter(
             category__name=asset_request.requested_name,
             status=Asset.Status.AVAILABLE,
+            is_requestable=True,
         ).select_related("category", "current_location", "assigned_to", "custodian_department")
         return Response(AssetListSerializer(assets, many=True).data)
 
@@ -813,7 +817,7 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
             return Response(self.get_serializer(asset_request).data)
 
         asset = Asset.objects.select_for_update().filter(pk=request.data.get("asset_id")).first()
-        if not asset or asset.status != Asset.Status.AVAILABLE:
+        if not asset or asset.status != Asset.Status.AVAILABLE or not asset.is_requestable:
             return Response({"message": "选择的设备已不可分配。"}, status=400)
         if asset.category.name != asset_request.requested_name:
             return Response({"message": "请分配与申请类型一致的设备。"}, status=400)

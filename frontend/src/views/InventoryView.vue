@@ -58,7 +58,7 @@ onMounted(load);
 <template>
   <div class="page module-page">
     <header class="page-intro">
-      <div><p class="eyebrow">数量库存</p><h1>配件、耗材和许可</h1><p>数量只通过库存流水变化，每次操作都有经办记录。</p></div>
+      <div><p class="eyebrow">数量库存</p><h1>配件、耗材和许可</h1></div>
       <div class="page-actions">
         <button class="secondary-button" @click="exportPurchaseList"><AppIcon name="download" :size="18" />采购清单</button>
         <button class="secondary-button" @click="exportInventory"><AppIcon name="download" :size="18" />导出库存</button>

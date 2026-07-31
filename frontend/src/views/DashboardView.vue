@@ -45,7 +45,6 @@ onMounted(async () => {
       <div>
         <p class="eyebrow">{{ dateLabel }}</p>
         <h1>今天的行政处理台</h1>
-        <p>车辆、采购、合同和资产待办集中在这里。</p>
       </div>
       <div v-if="scopes.includes('assets')" class="intro-actions">
         <button class="secondary-button" @click="emit('navigate', '/assets')">
@@ -126,7 +125,7 @@ onMounted(async () => {
           <div class="section-title">
             <div>
               <p class="eyebrow">最近流转</p>
-              <h2>资产时间线</h2>
+              <h2>流转记录</h2>
             </div>
             <button class="text-button" @click="emit('navigate', '/assets')">查看全部</button>
           </div>

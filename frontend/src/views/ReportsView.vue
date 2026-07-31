@@ -100,7 +100,7 @@ onMounted(loadReports);
 
 <template>
   <div class="page module-page">
-    <header class="page-intro"><div><p class="eyebrow">资产报表</p><h1>从数量看到管理缺口</h1><p>点击数据即可查看对应资产；数据问题支持勾选后批量补齐。</p></div></header>
+    <header class="page-intro"><div><p class="eyebrow">资产报表</p><h1>从数量看到管理缺口</h1></div></header>
     <div v-if="error" class="error-block">{{ error }}</div>
     <div v-else-if="!data" class="loading-block">正在汇总报表…</div>
     <template v-else>

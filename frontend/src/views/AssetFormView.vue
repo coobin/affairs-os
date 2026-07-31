@@ -26,6 +26,7 @@ const form = reactive({
   wired_mac: "",
   wireless_mac: "",
   status: "available",
+  is_requestable: true,
   assigned_to: "",
   current_location: "",
   custodian_department: "",
@@ -75,6 +76,7 @@ async function loadAsset() {
       wired_mac: asset.wired_mac,
       wireless_mac: asset.wireless_mac,
       status: asset.status,
+      is_requestable: asset.is_requestable,
       assigned_to: asset.assigned_to ? String(asset.assigned_to) : "",
       current_location: asset.current_location ? String(asset.current_location) : "",
       custodian_department: asset.custodian_department ? String(asset.custodian_department) : "",
@@ -142,7 +144,7 @@ watch(() => form.assigned_to, (value) => {
   }
 }, { flush: "sync" });
 watch(() => form.status, (value) => {
-  if (["available", "frozen", "disposed"].includes(value)) form.assigned_to = "";
+  if (["available", "disposed"].includes(value)) form.assigned_to = "";
 });
 watch(() => form.class_type, () => {
   if (form.category && !filteredCategories.value.some((item) => String(item.id) === form.category)) {
@@ -163,7 +165,6 @@ onMounted(loadAsset);
       <div>
         <p class="eyebrow">{{ isEditing ? "编辑台账" : "新增台账" }}</p>
         <h1>{{ isEditing ? "修改资产资料" : "登记一件新资产" }}</h1>
-        <p>{{ isEditing ? "更新识别信息、设备配置和采购资料。" : "先填写能识别和找到这件资产的信息，其他内容可以稍后补充。" }}</p>
       </div>
     </header>
 
@@ -171,17 +172,15 @@ onMounted(loadAsset);
     <form v-else class="asset-form-layout" @submit.prevent="save">
       <div class="form-main">
         <section class="form-section">
-          <div class="form-section-title"><span>01</span><div><h2>识别信息</h2><p>资产标签上最重要的内容。</p></div></div>
+          <div class="form-section-title"><span>01</span><div><h2>识别信息</h2></div></div>
           <div class="form-grid">
             <label>
               <span>资产编号</span>
               <input :value="form.asset_tag || '保存后自动生成'" readonly />
-              <small class="field-hint">系统专用编号，不允许手动填写或修改；规则为 IT/AD-分类编码-年份-三位流水号。</small>
             </label>
             <label>
               <span>显示名称</span>
               <input :value="displayName" readonly />
-              <small class="field-hint">由品牌和型号自动组成；未填写时使用资产类型。</small>
             </label>
             <label>
               <span>资产分类 <b>*</b></span>
@@ -221,7 +220,7 @@ onMounted(loadAsset);
         </section>
 
         <section class="form-section">
-          <div class="form-section-title"><span>02</span><div><h2>设备配置</h2><p>都是选填；按设备实际情况填写即可。</p></div></div>
+          <div class="form-section-title"><span>02</span><div><h2>设备配置</h2></div></div>
           <div class="form-grid">
             <label class="full-span">
               <span>主要配置</span>
@@ -236,7 +235,7 @@ onMounted(loadAsset);
         </section>
 
         <section class="form-section">
-          <div class="form-section-title"><span>03</span><div><h2>位置与归属</h2><p>资产现在放在哪里，由哪个部门保管。</p></div></div>
+          <div class="form-section-title"><span>03</span><div><h2>位置与归属</h2></div></div>
           <div class="form-grid">
             <label>
               <span>资产状态</span>
@@ -246,6 +245,10 @@ onMounted(loadAsset);
                 </option>
               </select>
               <small v-if="fieldError('status')" class="field-error">{{ fieldError("status") }}</small>
+            </label>
+            <label class="checkbox-field">
+              <input v-model="form.is_requestable" type="checkbox" />
+              <span>允许员工申请</span>
             </label>
             <label>
               <span>责任人</span>
@@ -269,13 +272,12 @@ onMounted(loadAsset);
                   {{ item.name }}
                 </option>
               </select>
-              <small class="field-hint">选择责任人时自动带出所在部门，也可以按共享或跨部门资产的实际归属调整。</small>
             </label>
           </div>
         </section>
 
         <section class="form-section">
-          <div class="form-section-title"><span>04</span><div><h2>采购与保修</h2><p>用于到期提醒和资产成本统计。</p></div></div>
+          <div class="form-section-title"><span>04</span><div><h2>采购与保修</h2></div></div>
           <div class="form-grid">
             <label><span>采购日期</span><input v-model="form.purchase_date" type="date" /></label>
             <label><span>采购金额</span><input v-model="form.purchase_cost" type="number" min="0" step="0.01" placeholder="0.00" /></label>
@@ -298,7 +300,6 @@ onMounted(loadAsset);
           <small>{{ props.lookups?.categories.find((item) => item.id === Number(form.category))?.code || "—" }}</small>
         </div>
         <div class="save-panel">
-          <p>{{ isEditing ? "保存后会自动留下资料变更记录。" : "新资产默认状态为“在库”，也可以按实际情况选择其他状态。" }}</p>
           <p v-if="error" class="form-error">{{ error }}</p>
           <button class="primary-button full" :disabled="loading">
             {{ loading ? "正在保存…" : isEditing ? "保存修改" : "保存资产" }}

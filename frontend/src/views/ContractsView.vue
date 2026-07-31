@@ -250,7 +250,7 @@ onMounted(load);
 <template>
   <div class="page module-page admin-module-page contract-register-page">
     <header class="page-intro">
-      <div><p class="eyebrow">合同履约台账</p><h1>合同、周期和历次变更</h1><p>续签形成新合同，延期和金额调整保留变更前后的完整记录。</p></div>
+      <div><p class="eyebrow">合同履约台账</p><h1>合同、周期和历次变更</h1></div>
       <div class="page-actions"><button class="primary-button" @click="openForm()">登记合同</button></div>
     </header>
 
@@ -312,7 +312,7 @@ onMounted(load);
               <label><span>结束日期</span><input v-model="form.end_date" type="date" :disabled="formMode === 'edit'" /></label>
               <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required :disabled="formMode === 'edit'" /></label>
               <label><span>到期提前提醒</span><span class="contract-input-suffix"><input v-model.number="form.renewal_notice_days" type="number" min="1" /><b>天</b></span></label>
-              <label class="contract-renew-toggle"><input v-model="form.auto_renew" type="checkbox" /><span><strong>合同约定自动续期</strong><small>仅记录合同条款，续签仍需人工确认并建立新合同。</small></span></label>
+              <label class="contract-renew-toggle"><input v-model="form.auto_renew" type="checkbox" /><span><strong>合同约定自动续期</strong></span></label>
             </div>
           </section>
           <section class="contract-form-section">
@@ -346,7 +346,7 @@ onMounted(load);
 
     <div v-if="historyContract" class="modal-backdrop" @click.self="historyContract = null">
       <section class="modal-panel contract-history-modal">
-        <header class="modal-header"><div><p class="eyebrow">合同历史</p><h2>{{ historyContract.name }}</h2><p>按期次查看合同资料、变更记录和源文件。</p></div><button type="button" class="icon-button" @click="historyContract = null">×</button></header>
+        <header class="modal-header"><div><p class="eyebrow">合同历史</p><h2>{{ historyContract.name }}</h2></div><button type="button" class="icon-button" @click="historyContract = null">×</button></header>
         <div v-if="historyLoading" class="history-loading">正在读取合同历史…</div>
         <div v-else-if="historyError" class="error-block history-error">{{ historyError }}</div>
         <div v-else class="history-workbench">
@@ -383,15 +383,14 @@ onMounted(load);
         <header><div><p class="eyebrow">合同文件 · {{ selectedContract.contract_no }}</p><h2>{{ selectedContract.name }}</h2></div><button type="button" class="icon-button" @click="selectedContract = null">×</button></header>
         <div class="contract-upload-desk contract-upload-versioned">
           <label><span>归档位置</span><select v-model="fileChange"><option value="">初始合同</option><option v-for="change in [...selectedContract.changes].reverse()" :key="change.id" :value="change.id">{{ change.changed_on }} · {{ change.change_type_label }}</option></select></label>
-          <label><span>文件类别</span><select v-model="documentType"><option value="original">合同原件</option><option value="signed">盖章扫描件</option><option value="supplement">补充协议</option><option value="quotation">报价单</option><option value="other">其他</option></select></label>
+          <label><span>文件类别</span><select v-model="documentType"><option value="original">合同原件</option><option value="signed">盖章扫描件</option><option value="supplement">补充协议</option><option value="quotation">报价单</option><option value="invoice">发票</option><option value="other">其他</option></select></label>
           <label class="primary-button contract-file-picker"><AppIcon name="upload" :size="18" />{{ fileUploading ? '正在上传…' : '选择合同文件' }}<input type="file" multiple :disabled="fileUploading" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.zip,.rar,.7z,.ofd,.wps" @change="uploadFiles" /></label>
-          <small>文件存储在公司 Nextcloud，并按初始合同或具体变更分组。</small>
         </div>
         <p v-if="fileError" class="form-error file-vault-error">{{ fileError }}</p>
         <div v-if="selectedContract.attachments.length" class="contract-file-groups">
           <section v-for="group in attachmentGroups" :key="group.key"><header><strong>{{ group.label }}</strong><span>{{ group.files.length }} 个文件</span></header><div class="contract-file-list"><article v-for="file in group.files" :key="file.id"><span class="file-kind">{{ file.original_name.split('.').pop()?.slice(0, 4).toUpperCase() }}</span><div><strong>{{ file.original_name }}</strong><small>{{ file.document_type_label }} · {{ fileSize(file.size_bytes) }} · {{ file.uploaded_by_name }}</small></div><button class="secondary-button" @click="downloadFile(file)"><AppIcon name="download" :size="16" />下载</button><button class="text-button danger" @click="deleteFile(file)">删除</button></article></div></section>
         </div>
-        <div v-else class="file-vault-empty"><strong>还没有合同文件</strong><span>上传初始合同文件，或先登记变更后归档补充协议。</span></div>
+        <div v-else class="file-vault-empty"><strong>还没有合同文件</strong></div>
       </section>
     </div>
   </div>

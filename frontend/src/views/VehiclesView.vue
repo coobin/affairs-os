@@ -73,7 +73,7 @@ onMounted(load);
 
 <template>
   <div class="page module-page admin-module-page">
-    <header class="page-intro"><div><p class="eyebrow">行政资源 · 车辆</p><h1>从申请用车到费用归集</h1><p>申请人只填写行程，车辆管理员完成审批、派车、出车和返回。</p></div><div class="page-actions"><button class="primary-button" @click="showDispatch = true">申请用车</button><button v-if="canManage" class="secondary-button" @click="showVehicle = true">登记车辆</button></div></header>
+    <header class="page-intro"><div><p class="eyebrow">行政资源 · 车辆</p><h1>从申请用车到费用归集</h1></div><div class="page-actions"><button class="primary-button" @click="showDispatch = true">申请用车</button><button v-if="canManage" class="secondary-button" @click="showVehicle = true">登记车辆</button></div></header>
     <section class="admin-kpi-strip"><div><span>待处理派车</span><strong>{{ pendingCount }}</strong></div><div v-if="canManage"><span>可用车辆</span><strong>{{ availableVehicles.length }}</strong></div><div v-if="canManage"><span>本年车辆费用</span><strong>{{ money(expenses.filter(x => x.occurred_on.startsWith(String(new Date().getFullYear()))).reduce((s,x) => s + Number(x.amount), 0)) }}</strong></div></section>
     <nav class="ledger-tabs"><button :class="{active:tab==='dispatches'}" @click="tab='dispatches'">派车申请</button><button v-if="canManage" :class="{active:tab==='vehicles'}" @click="tab='vehicles'">车辆台账</button><button v-if="canManage" :class="{active:tab==='expenses'}" @click="tab='expenses'">车辆事项与费用</button></nav>
     <div v-if="error" class="error-block">{{ error }}</div>

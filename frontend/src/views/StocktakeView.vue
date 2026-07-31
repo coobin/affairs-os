@@ -33,7 +33,7 @@ onMounted(load);
 </script>
 <template>
   <div class="page module-page">
-    <header class="page-intro"><div><p class="eyebrow">资产盘点</p><h1>逐件确认，差异留痕</h1><p>创建任务时冻结账面清单，完成后生成未盘到和位置差异。</p></div><button v-if="canManage" class="primary-button" @click="showNew = !showNew"><AppIcon name="plus" />创建盘点</button></header>
+    <header class="page-intro"><div><p class="eyebrow">资产盘点</p><h1>逐件确认，差异留痕</h1></div><button v-if="canManage" class="primary-button" @click="showNew = !showNew"><AppIcon name="plus" />创建盘点</button></header>
     <form v-if="showNew" class="inline-editor stocktake-create" @submit.prevent="createTask"><input v-model="form.name" required placeholder="例如 2026 年 7 月 IT 库房盘点" /><select v-model="form.scope_location"><option value="">全部地点</option><option v-for="loc in lookups?.locations || []" :key="loc.id" :value="loc.id">{{ loc.name }}</option></select><button class="primary-button">创建并开始</button></form>
     <div class="stocktake-layout">
       <aside class="task-list-panel"><p class="eyebrow">盘点任务</p><button v-for="task in tasks" :key="task.id" :class="{ active: active?.id === task.id }" @click="openTask(task.id)"><span><strong>{{ task.name }}</strong><small>{{ task.location_name || "全部地点" }} · {{ task.status_label }}</small></span><b>{{ task.scanned_count }}/{{ task.snapshot_count }}</b></button><div v-if="!tasks.length" class="empty-state">还没有盘点任务。</div></aside>

@@ -131,7 +131,7 @@ onMounted(load);
 <template>
   <div class="page request-page">
     <header class="page-intro request-intro">
-      <div><p class="eyebrow">领用借用服务台</p><h1>{{ isManaging ? "待分配物品" : "领用或借用" }}</h1><p>{{ isManaging ? "核对申请后分配具体资产，或确认发放库存物品。" : "领用可搜索资产和库存物品；借用仅支持资产。" }}</p></div>
+      <div><p class="eyebrow">领用借用服务台</p><h1>{{ isManaging ? "待分配物品" : "领用或借用" }}</h1></div>
       <span class="request-counter"><strong>{{ pending.length }}</strong><small>{{ isManaging ? "待处理" : "进行中" }}</small></span>
     </header>
 
@@ -185,7 +185,7 @@ onMounted(load);
 
     <section v-if="!isManaging" class="my-loaned-assets">
       <header class="request-ledger-head">
-        <div><p class="eyebrow">当前持有</p><h2>我的借用资产</h2><small>直接显示责任人为你的借用中资产，不作为历史申请记录。</small></div>
+        <div><p class="eyebrow">当前持有</p><h2>我的借用资产</h2></div>
         <span>{{ myLoanedAssets.length }} 件</span>
       </header>
       <div v-if="!myLoanedAssets.length" class="empty-state">当前没有借用中的资产。</div>
