@@ -278,7 +278,10 @@ class AssetViewSet(viewsets.ModelViewSet):
         "warranty_expires_at",
         "created_at",
     ]
-    ordering = ["-created_at"]
+    ordering = [
+        F("purchase_date").desc(nulls_last=True),
+        F("created_at").desc(),
+    ]
 
     def get_serializer_class(self):
         if self.action == "list":

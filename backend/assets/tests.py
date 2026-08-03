@@ -251,6 +251,28 @@ class AssetApiTests(TestCase):
         self.assertEqual(response.data["count"], 105)
         self.assertEqual(len(response.data["results"]), 100)
 
+    def test_asset_list_defaults_to_newest_purchase_date_with_missing_dates_last(self):
+        older_asset = Asset.objects.create(
+            asset_tag="IT-MN-SORT-001",
+            name="较早采购资产",
+            category=self.category,
+            purchase_date=date(2024, 1, 1),
+        )
+        newer_asset = Asset.objects.create(
+            asset_tag="IT-MN-SORT-002",
+            name="较新采购资产",
+            category=self.category,
+            purchase_date=date(2025, 1, 1),
+        )
+
+        response = self.client.get("/api/v1/assets/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["id"] for item in response.data["results"]],
+            [newer_asset.id, older_asset.id, self.asset.id],
+        )
+
     def test_asset_status_can_be_added_in_settings_and_used(self):
         created = self.client.post(
             "/api/v1/asset-statuses/",
