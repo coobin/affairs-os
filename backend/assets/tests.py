@@ -733,10 +733,7 @@ class AssetResequenceCommandTests(TestCase):
             },
         )
         self.assertFalse(
-            AssetCategory.objects.filter(
-                name__in=["AP", "显示器", "录像机"],
-                is_active=True,
-            ).exists()
+            AssetCategory.objects.filter(name__in=["AP", "显示器", "录像机"]).exists()
         )
         for asset in assets:
             asset.refresh_from_db()

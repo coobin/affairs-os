@@ -35,8 +35,8 @@ class Command(BaseCommand):
                 is_active=True,
             ).exists():
                 return False
-        return not Asset.objects.filter(
-            category__name__in=["AP", "交换机", "显示器", "录像机"]
+        return not AssetCategory.objects.filter(
+            name__in=["AP", "交换机", "显示器", "录像机"]
         ).exists()
 
     def handle(self, *args, **options):
@@ -87,9 +87,9 @@ class Command(BaseCommand):
             merge_counts = []
             for source, target in merge_pairs:
                 count = Asset.objects.filter(category=source).update(category=target)
-                source.is_active = False
-                source.save(update_fields=["is_active", "updated_at"])
-                merge_counts.append((source.name, target.name, count))
+                source_name = source.name
+                source.delete()
+                merge_counts.append((source_name, target.name, count))
 
             call_command(
                 "resequence_asset_tags",
