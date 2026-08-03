@@ -342,8 +342,8 @@ onBeforeUnmount(clearImagePreviews);
           <section class="detail-card compact-card">
             <p class="eyebrow">设备信息</p>
             <dl>
+              <div><dt>资产标签</dt><dd>{{ asset.asset_tag }}</dd></div>
               <div><dt>序列号</dt><dd>{{ asset.serial_number || "—" }}</dd></div>
-              <div><dt>系统编码</dt><dd>{{ asset.custom_data.system_code || "—" }}</dd></div>
               <div><dt>金蝶编码</dt><dd>{{ asset.kingdee_code || "—" }}</dd></div>
               <div><dt>采购日期</dt><dd>{{ formatDate(asset.purchase_date) }}</dd></div>
               <div><dt>采购金额</dt><dd>{{ currency(asset.purchase_cost) }}</dd></div>

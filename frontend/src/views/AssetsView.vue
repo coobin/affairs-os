@@ -92,6 +92,12 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("zh-CN").format(new Date(`${value}T00:00:00`));
 }
 
+function openAssetDetail(assetId: number) {
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed && selection.toString().trim()) return;
+  emit("navigate", `/assets/${assetId}`);
+}
+
 function resetAndLoad() {
   page.value = 1;
   saveListState();
@@ -226,7 +232,7 @@ onMounted(loadAssets);
             </tr>
           </thead>
           <tbody>
-            <tr v-for="asset in assets" :key="asset.id" @click="emit('navigate', `/assets/${asset.id}`)">
+            <tr v-for="asset in assets" :key="asset.id" @click="openAssetDetail(asset.id)">
               <td>
                 <span class="table-tag">
                   <i></i><strong>{{ asset.asset_tag }}</strong><small>{{ asset.category_code }}</small>
