@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+import re
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -50,11 +51,18 @@ def _display_status(value):
     return configured or dict(Asset.Status.choices).get(value, value)
 
 
-def generate_asset_tag(category):
-    year = date.today().year
+def asset_tag_year(purchase_date=None, created_at=None):
+    if purchase_date:
+        return purchase_date.year
+    if created_at:
+        return created_at.year
+    return date.today().year
+
+
+def generate_asset_tag(category, purchase_date=None):
+    year = asset_tag_year(purchase_date=purchase_date)
     sequence, _ = AssetNumberSequence.objects.select_for_update().get_or_create(
         category=category,
-        year=year,
         defaults={"current_value": 0},
     )
     while True:
@@ -64,6 +72,35 @@ def generate_asset_tag(category):
         if not Asset.objects.filter(asset_tag=candidate).exists():
             sequence.save(update_fields=["current_value"])
             return candidate
+
+
+def align_asset_tag(asset, *, category_changed=False):
+    old_tag = asset.asset_tag
+    if category_changed:
+        new_tag = generate_asset_tag(asset.category, asset.purchase_date)
+    else:
+        match = re.search(r"-(\d{3})$", old_tag)
+        if match:
+            prefix = "AD" if asset.category.class_type == "ADMIN" else "IT"
+            year = asset_tag_year(asset.purchase_date, asset.created_at)
+            new_tag = f"{prefix}-{asset.category.code.upper()}-{year}-{match.group(1)}"
+            if Asset.objects.exclude(pk=asset.pk).filter(asset_tag=new_tag).exists():
+                new_tag = generate_asset_tag(asset.category, asset.purchase_date)
+        else:
+            new_tag = generate_asset_tag(asset.category, asset.purchase_date)
+
+    if new_tag == old_tag:
+        return old_tag, new_tag
+
+    custom_data = dict(asset.custom_data)
+    previous_tags = list(custom_data.get("previous_asset_tags", []))
+    if old_tag not in previous_tags:
+        previous_tags.append(old_tag)
+    custom_data["previous_asset_tags"] = previous_tags
+    asset.asset_tag = new_tag
+    asset.custom_data = custom_data
+    asset.save(update_fields=["asset_tag", "custom_data", "updated_at"])
+    return old_tag, new_tag
 
 
 @transaction.atomic

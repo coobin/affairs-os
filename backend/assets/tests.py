@@ -209,14 +209,31 @@ class AssetApiTests(TestCase):
                 "category": self.category.pk,
                 "asset_tag": "MANUAL-CODE-001",
                 "kingdee_code": "KD-000123",
+                "purchase_date": "2021-06-18",
             },
             format="json",
         )
         self.assertEqual(response.status_code, 201)
-        self.assertRegex(response.data["asset_tag"], r"^IT-MN-\d{4}-001$")
+        self.assertEqual(response.data["asset_tag"], "IT-MN-2021-001")
         self.assertNotEqual(response.data["asset_tag"], "MANUAL-CODE-001")
         self.assertEqual(response.data["kingdee_code"], "KD-000123")
         self.assertEqual(response.data["name"], "显示器")
+
+        updated = self.client.patch(
+            f"/api/v1/assets/{response.data['id']}/",
+            {"purchase_date": "2022-06-18"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data["asset_tag"], "IT-MN-2022-001")
+
+        second = self.client.post(
+            "/api/v1/assets/",
+            {"category": self.category.pk, "purchase_date": "2024-01-01"},
+            format="json",
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.data["asset_tag"], "IT-MN-2024-002")
 
     def test_asset_page_size_is_capped_at_100(self):
         Asset.objects.bulk_create(
@@ -596,25 +613,40 @@ class AssetResequenceCommandTests(TestCase):
             code="FU",
             class_type=AssetCategory.ClassType.ADMIN,
         )
-        first = Asset.objects.create(asset_tag="OLD-001", name="电脑一", category=it_category)
-        second = Asset.objects.create(asset_tag="OLD-002", name="电脑二", category=it_category)
-        furniture = Asset.objects.create(asset_tag="OLD-003", name="办公桌", category=admin_category)
+        first = Asset.objects.create(
+            asset_tag="OLD-001",
+            name="电脑一",
+            category=it_category,
+            purchase_date=date(2024, 5, 1),
+        )
+        second = Asset.objects.create(
+            asset_tag="OLD-002",
+            name="电脑二",
+            category=it_category,
+            purchase_date=date(2022, 1, 1),
+        )
+        furniture = Asset.objects.create(
+            asset_tag="OLD-003",
+            name="办公桌",
+            category=admin_category,
+            purchase_date=date(2020, 8, 8),
+        )
 
         with TemporaryDirectory() as output_dir:
             output_path = f"{output_dir}/asset_tag_mapping.csv"
-            call_command("resequence_asset_tags", year=2026, output=output_path)
+            call_command("resequence_asset_tags", output=output_path)
             with open(output_path, encoding="utf-8-sig") as mapping_file:
                 self.assertEqual(len(mapping_file.readlines()), 4)
 
         first.refresh_from_db()
         second.refresh_from_db()
         furniture.refresh_from_db()
-        self.assertEqual(first.asset_tag, "IT-LT-2026-001")
-        self.assertEqual(second.asset_tag, "IT-LT-2026-002")
-        self.assertEqual(furniture.asset_tag, "AD-FU-2026-001")
+        self.assertEqual(first.asset_tag, "IT-LT-2024-002")
+        self.assertEqual(second.asset_tag, "IT-LT-2022-001")
+        self.assertEqual(furniture.asset_tag, "AD-FU-2020-001")
         self.assertIn("OLD-001", first.custom_data["previous_asset_tags"])
         self.assertEqual(
-            AssetNumberSequence.objects.get(category=it_category, year=2026).current_value,
+            AssetNumberSequence.objects.get(category=it_category).current_value,
             2,
         )
         self.assertTrue(

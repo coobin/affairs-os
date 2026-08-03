@@ -410,14 +410,14 @@ class AssetNumberSequence(models.Model):
         on_delete=models.CASCADE,
         related_name="+",
     )
-    year = models.PositiveSmallIntegerField("年份")
+    year = models.PositiveSmallIntegerField("兼容年份", default=0, editable=False)
     current_value = models.PositiveIntegerField("当前流水号", default=0)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=("category", "year"),
-                name="asset_sequence_category_year_unique",
+                fields=("category",),
+                name="asset_sequence_category_unique",
             )
         ]
         verbose_name = "资产编号流水"

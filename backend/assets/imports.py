@@ -19,7 +19,7 @@ from .models import (
     InventoryTransaction,
     Location,
 )
-from .services import generate_asset_tag
+from .services import align_asset_tag, generate_asset_tag
 
 User = get_user_model()
 
@@ -566,8 +566,10 @@ def apply_asset_import(rows, actor):
             "kingdee_code": kingdee_code,
         }
         asset = Asset.objects.filter(pk=existing_id).first() if existing_id else None
-        tag = asset.asset_tag if asset else generate_asset_tag(category)
+        tag = asset.asset_tag if asset else generate_asset_tag(category, data.get("purchase_date"))
         before_status = asset.status if asset else ""
+        before_category_id = asset.category_id if asset else None
+        before_purchase_date = asset.purchase_date if asset else None
         if asset and category_missing:
             defaults["category"] = asset.category
         if asset and assignee_text and assignee is None:
@@ -589,6 +591,14 @@ def apply_asset_import(rows, actor):
                 **import_metadata,
             }
             asset.save()
+            if (
+                asset.category_id != before_category_id
+                or asset.purchase_date != before_purchase_date
+            ):
+                align_asset_tag(
+                    asset,
+                    category_changed=asset.category_id != before_category_id,
+                )
             updated += 1
             action = AssetEvent.Action.UPDATED
             note = f"Excel 批量导入更新（第 {row['row_number']} 行）"

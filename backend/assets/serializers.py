@@ -37,7 +37,7 @@ from .models import (
     VehicleExpense,
 )
 from .permissions import management_scopes
-from .services import generate_asset_tag, perform_asset_action
+from .services import align_asset_tag, generate_asset_tag, perform_asset_action
 
 User = get_user_model()
 
@@ -483,7 +483,10 @@ class AssetSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         actor = self.context["request"].user
-        validated_data["asset_tag"] = generate_asset_tag(validated_data["category"])
+        validated_data["asset_tag"] = generate_asset_tag(
+            validated_data["category"],
+            validated_data.get("purchase_date"),
+        )
         asset = Asset.objects.create(**validated_data)
         AssetEvent.objects.create(
             asset=asset,
@@ -501,12 +504,25 @@ class AssetSerializer(serializers.ModelSerializer):
         before_status = instance.status
         before_user = instance.assigned_to
         before_location = instance.current_location
+        before_category_id = instance.category_id
+        before_purchase_date = instance.purchase_date
+        before_asset_tag = instance.asset_tag
         changed_fields = {
             field: {"from": getattr(instance, field), "to": value}
             for field, value in validated_data.items()
             if getattr(instance, field) != value
         }
         asset = super().update(instance, validated_data)
+        if asset.category_id != before_category_id or asset.purchase_date != before_purchase_date:
+            _, new_asset_tag = align_asset_tag(
+                asset,
+                category_changed=asset.category_id != before_category_id,
+            )
+            if new_asset_tag != before_asset_tag:
+                changed_fields["asset_tag"] = {
+                    "from": before_asset_tag,
+                    "to": new_asset_tag,
+                }
         if changed_fields:
             safe_changes = {
                 field: {
