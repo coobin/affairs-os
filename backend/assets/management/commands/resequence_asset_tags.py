@@ -42,8 +42,17 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--output", help="旧编号与新编号对照 CSV 的保存路径。")
+        parser.add_argument(
+            "--discard-old-tags",
+            action="store_true",
+            help="不保留旧资产编号，并清除已有旧编号记录。",
+        )
 
     def handle(self, *args, **options):
+        discard_old_tags = options["discard_old_tags"]
+        if discard_old_tags and options.get("output"):
+            raise CommandError("不保留旧编号时不能生成新旧编号对照表。")
+
         with transaction.atomic():
             assets = list(
                 Asset.objects.select_for_update()
@@ -70,10 +79,14 @@ class Command(BaseCommand):
 
                 for asset, old_tag, new_tag in mapping:
                     custom_data = dict(asset.custom_data)
-                    previous_tags = list(custom_data.get("previous_asset_tags", []))
-                    if old_tag not in previous_tags:
-                        previous_tags.append(old_tag)
-                    custom_data["previous_asset_tags"] = previous_tags
+                    if discard_old_tags:
+                        custom_data.pop("previous_asset_tags", None)
+                        custom_data.pop("import_original_asset_tag", None)
+                    else:
+                        previous_tags = list(custom_data.get("previous_asset_tags", []))
+                        if old_tag not in previous_tags:
+                            previous_tags.append(old_tag)
+                        custom_data["previous_asset_tags"] = previous_tags
                     asset.asset_tag = new_tag
                     asset.custom_data = custom_data
                     asset.save(update_fields=["asset_tag", "custom_data", "updated_at"])
@@ -87,8 +100,19 @@ class Command(BaseCommand):
                         from_location=asset.current_location,
                         to_location=asset.current_location,
                         notes="系统统一调整资产编号",
-                        metadata={"old_asset_tag": old_tag, "new_asset_tag": new_tag},
+                        metadata=(
+                            {"new_asset_tag": new_tag}
+                            if discard_old_tags
+                            else {"old_asset_tag": old_tag, "new_asset_tag": new_tag}
+                        ),
                     )
+
+                if discard_old_tags:
+                    for event in AssetEvent.objects.filter(metadata__has_key="old_asset_tag"):
+                        metadata = dict(event.metadata)
+                        metadata.pop("old_asset_tag", None)
+                        event.metadata = metadata
+                        event.save(update_fields=["metadata"])
 
                 AssetNumberSequence.objects.all().delete()
                 AssetNumberSequence.objects.bulk_create(
@@ -106,4 +130,7 @@ class Command(BaseCommand):
         mode = "预演" if options["dry_run"] else "完成"
         self.stdout.write(self.style.SUCCESS(f"{mode}：共处理 {len(mapping)} 件资产。"))
         for _, old_tag, new_tag in mapping[:10]:
-            self.stdout.write(f"{old_tag} -> {new_tag}")
+            if discard_old_tags:
+                self.stdout.write(f"新编号：{new_tag}")
+            else:
+                self.stdout.write(f"{old_tag} -> {new_tag}")

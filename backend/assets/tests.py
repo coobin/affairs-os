@@ -675,6 +675,89 @@ class AssetResequenceCommandTests(TestCase):
             first.events.filter(metadata__old_asset_tag="OLD-001").exists()
         )
 
+    def test_normalize_asset_categories_merges_and_resequences_assets(self):
+        categories = {
+            name: AssetCategory.objects.create(name=name, code=code)
+            for name, code in [
+                ("笔记本电脑", "LI"),
+                ("台式机", "WL"),
+                ("显示器", "FE"),
+                ("显示屏", "NW"),
+                ("会议设备", "XK"),
+                ("录像机", "ZO"),
+                ("服务器", "XF"),
+                ("交换机", "CT"),
+                ("AP", "AP"),
+            ]
+        }
+        assets = [
+            Asset.objects.create(
+                asset_tag=old_tag,
+                name=name,
+                category=categories[category_name],
+                purchase_date=purchase_date,
+            )
+            for old_tag, name, category_name, purchase_date in [
+                ("OLD-AP", "无线接入点", "AP", date(2025, 3, 1)),
+                ("OLD-SWITCH", "交换机", "交换机", date(2022, 2, 1)),
+                ("OLD-MONITOR", "显示器", "显示器", date(2021, 1, 1)),
+                ("OLD-SCREEN", "显示屏", "显示屏", date(2022, 1, 1)),
+                ("OLD-RECORDER", "录像机", "录像机", date(2021, 1, 1)),
+                ("OLD-SERVER", "服务器", "服务器", date(2022, 1, 1)),
+            ]
+        ]
+        assets[0].custom_data = {
+            "previous_asset_tags": ["LEGACY-AP"],
+            "import_original_asset_tag": "IMPORT-AP",
+        }
+        assets[0].save(update_fields=["custom_data", "updated_at"])
+        AssetEvent.objects.create(
+            asset=assets[0],
+            action=AssetEvent.Action.UPDATED,
+            metadata={"old_asset_tag": "LEGACY-AP", "new_asset_tag": "OLD-AP"},
+        )
+
+        call_command("normalize_asset_categories")
+
+        self.assertEqual(
+            dict(
+                AssetCategory.objects.filter(is_active=True).values_list("name", "code")
+            ),
+            {
+                "笔记本电脑": "LT",
+                "台式机": "DT",
+                "显示屏": "MN",
+                "会议设备": "AV",
+                "网络设备": "NW",
+                "服务器": "SV",
+            },
+        )
+        self.assertFalse(
+            AssetCategory.objects.filter(
+                name__in=["AP", "显示器", "录像机"],
+                is_active=True,
+            ).exists()
+        )
+        for asset in assets:
+            asset.refresh_from_db()
+            self.assertIn(asset.asset_tag.split("-")[1], {"MN", "NW", "SV"})
+            self.assertNotIn("previous_asset_tags", asset.custom_data)
+            self.assertNotIn("import_original_asset_tag", asset.custom_data)
+        self.assertFalse(AssetEvent.objects.filter(metadata__has_key="old_asset_tag").exists())
+
+        network_tags = list(
+            Asset.objects.filter(category__name="网络设备")
+            .order_by("purchase_date")
+            .values_list("asset_tag", flat=True)
+        )
+        self.assertEqual(network_tags, ["IT-NW-2022-001", "IT-NW-2025-002"])
+
+        call_command("normalize_asset_categories")
+        self.assertEqual(
+            Asset.objects.filter(category__name="网络设备").count(),
+            2,
+        )
+
 
 class PeopleImportTests(TestCase):
     def test_import_people_creates_department_and_non_login_employee(self):
