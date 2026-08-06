@@ -87,18 +87,57 @@ def send_daily_operational_notifications():
 
     from .notifications import notification_manager_users, queue_email_notification
 
-    overdue_assets = list(
+    due_assets = list(
         Asset.objects.filter(
             status=Asset.Status.LOANED,
-            expected_return_at__lt=today,
+            expected_return_at__lt=today + timedelta(days=1),
             assigned_to__isnull=False,
         ).select_related("assigned_to", "category", "current_location")
     )
-    assets_by_user = defaultdict(list)
-    for asset in overdue_assets:
-        assets_by_user[asset.assigned_to].append(asset)
+    due_today_by_user = defaultdict(list)
+    overdue_by_user = defaultdict(list)
+    for asset in due_assets:
+        bucket = (
+            due_today_by_user
+            if asset.expected_return_at == today
+            else overdue_by_user
+        )
+        bucket[asset.assigned_to].append(asset)
+    due_today_assets = [asset for group in due_today_by_user.values() for asset in group]
+    overdue_assets = [asset for group in overdue_by_user.values() for asset in group]
 
-    for user, assets in assets_by_user.items():
+    for user, assets in due_today_by_user.items():
+        lines = "\n".join(
+            f"- {asset.asset_tag} · {asset.name}，应于 {asset.expected_return_at:%Y-%m-%d} 归还"
+            for asset in assets
+        )
+        queue_email_notification(
+            event_key=f"daily-due-today:{today}:user:{user.pk}",
+            event_type="loan_due_today",
+            recipients=[user],
+            subject=f"你有 {len(assets)} 件借用资产今天到期",
+            body=(
+                f"{user.get_full_name() or user.username}，以下借用资产今天到期：\n\n"
+                f"{lines}\n\n请按时归还或联系管理员办理续借。"
+            ),
+        )
+
+    if due_today_assets:
+        manager_lines = "\n".join(
+            f"- {asset.asset_tag} · {asset.name} · "
+            f"{asset.assigned_to.get_full_name() or asset.assigned_to.username} · "
+            f"应还 {asset.expected_return_at:%Y-%m-%d}"
+            for asset in due_today_assets
+        )
+        queue_email_notification(
+            event_key=f"daily-due-today:{today}:managers",
+            event_type="loan_due_today_summary",
+            recipients=notification_manager_users("assets", "inventory"),
+            subject=f"借用到期提醒：今天共 {len(due_today_assets)} 件到期",
+            body=f"当前有以下借用资产今天到期：\n\n{manager_lines}\n\n请提醒相关责任人按时归还或办理续借。",
+        )
+
+    for user, assets in overdue_by_user.items():
         lines = "\n".join(
             f"- {asset.asset_tag} · {asset.name}，应于 {asset.expected_return_at:%Y-%m-%d} 归还"
             for asset in assets

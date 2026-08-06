@@ -1690,6 +1690,59 @@ class EmailNotificationTests(TestCase):
         self.assertEqual(list(user_notifications.values_list("event_type", flat=True)), ["loan_overdue"])
         self.assertTrue(user_notifications.get().subject.startswith("[行政资产管理] "))
 
+    def test_daily_task_queues_due_today_reminder(self):
+        self.asset.status = Asset.Status.LOANED
+        self.asset.assigned_to = self.requester
+        self.asset.expected_return_at = timezone.localdate()
+        self.asset.save()
+
+        result = send_daily_operational_notifications()
+        self.assertEqual(result["overdue"], 0)
+        requester_notification = EmailNotification.objects.get(
+            event_type="loan_due_today",
+            recipient_email="requester@example.com",
+        )
+        manager_notification = EmailNotification.objects.get(
+            event_type="loan_due_today_summary",
+            recipient_email="manager@example.com",
+        )
+        self.assertIn("今天到期", requester_notification.subject)
+        self.assertIn("请按时归还或联系管理员办理续借", requester_notification.body)
+        self.assertIn("今天共 1 件到期", manager_notification.subject)
+        self.assertFalse(EmailNotification.objects.filter(event_type="loan_overdue").exists())
+
+    def test_daily_task_distinguishes_due_today_and_overdue(self):
+        self.asset.status = Asset.Status.LOANED
+        self.asset.assigned_to = self.requester
+        self.asset.expected_return_at = timezone.localdate()
+        self.asset.save()
+        overdue = Asset.objects.create(
+            asset_tag="IT-NB-2026-302",
+            category=self.category,
+            brand="Lenovo",
+            model_name="ThinkBook",
+            status=Asset.Status.LOANED,
+            assigned_to=self.requester,
+            expected_return_at=timezone.localdate() - timedelta(days=1),
+        )
+
+        send_daily_operational_notifications()
+        event_types = set(
+            EmailNotification.objects.filter(recipient_email="requester@example.com")
+            .values_list("event_type", flat=True)
+        )
+        self.assertEqual(event_types, {"loan_due_today", "loan_overdue"})
+        due_subject = EmailNotification.objects.get(
+            event_type="loan_due_today",
+            recipient_email="requester@example.com",
+        ).subject
+        overdue_subject = EmailNotification.objects.get(
+            event_type="loan_overdue",
+            recipient_email="requester@example.com",
+        ).subject
+        self.assertIn("今天到期", due_subject)
+        self.assertIn("已经超期", overdue_subject)
+
 
 @override_settings(EMAIL_NOTIFICATIONS_ENABLED=False)
 class AdministrativePhaseTests(TestCase):
