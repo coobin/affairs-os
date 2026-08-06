@@ -1,6 +1,7 @@
 import io
 import json
 from datetime import date, timedelta
+from decimal import Decimal
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -1828,6 +1829,153 @@ class AdministrativePhaseTests(TestCase):
             [row["contract_no"] for row in history.data],
             [previous.contract_no, successor.contract_no, latest.contract_no],
         )
+
+    def test_contract_change_error_keeps_contract_untouched(self):
+        self.client.force_authenticate(self.admin)
+        contract = Contract.objects.create(
+            contract_no="HT-ERR-001", name="错误场景合同", category=self.category,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="12000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        failed = self.client.post(
+            f"/api/v1/contracts/{contract.pk}/changes/",
+            {
+                "change_type": "extension", "changed_on": "2026-11-01",
+                "new_end_date": "2025-12-31", "notes": "结束日期早于开始日期",
+            }, format="json",
+        )
+        self.assertEqual(failed.status_code, 400)
+        self.assertIn(
+            "变更后的结束日期不能早于开始日期。",
+            failed.data["errors"]["new_end_date"][0],
+        )
+        contract.refresh_from_db()
+        self.assertEqual(contract.end_date, date(2026, 12, 31))
+        self.assertFalse(ContractChange.objects.filter(contract=contract).exists())
+
+    def test_supplement_change_creates_supplement_contract_and_totals_amount(self):
+        self.client.force_authenticate(self.admin)
+        parent = Contract.objects.create(
+            contract_no="HT-SUP-001", name="年度保洁服务合同", category=self.category,
+            department=self.department, owner=self.employee,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="12000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        first = self.client.post(
+            f"/api/v1/contracts/{parent.pk}/changes/",
+            {
+                "change_type": "supplement", "changed_on": "2026-03-01",
+                "new_start_date": "2026-03-01", "new_end_date": "2026-06-30",
+                "new_amount": "5000.00", "notes": "增加绿化养护服务",
+            }, format="json",
+        )
+        self.assertEqual(first.status_code, 201)
+        parent.refresh_from_db()
+        self.assertEqual(parent.amount, Decimal("12000.00"))
+        self.assertEqual(parent.end_date, date(2026, 12, 31))
+        supplement = Contract.objects.get(supplement_of=parent)
+        self.assertEqual(supplement.contract_no, "HT-SUP-001-S01")
+        self.assertEqual(supplement.name, "年度保洁服务合同（补充协议 1）")
+        self.assertEqual(supplement.amount, Decimal("5000.00"))
+        self.assertEqual(supplement.start_date, date(2026, 3, 1))
+        self.assertEqual(supplement.end_date, date(2026, 6, 30))
+        self.assertEqual(supplement.status, Contract.Status.ACTIVE)
+        change = ContractChange.objects.get(
+            contract=parent,
+            change_type=ContractChange.ChangeType.SUPPLEMENT,
+        )
+        self.assertEqual(change.new_amount, Decimal("5000.00"))
+        self.assertEqual(change.old_amount, Decimal("12000.00"))
+
+        second = self.client.post(
+            f"/api/v1/contracts/{parent.pk}/changes/",
+            {
+                "change_type": "supplement", "changed_on": "2026-09-01",
+                "new_start_date": "2026-09-01", "new_end_date": "2026-12-31",
+                "new_amount": "3000.00", "notes": "增加门禁维护服务",
+            }, format="json",
+        )
+        self.assertEqual(second.status_code, 201)
+        second_supplement = Contract.objects.get(contract_no="HT-SUP-001-S02")
+
+        listed = self.client.get("/api/v1/contracts/")
+        parent_row = next(row for row in listed.data if row["id"] == parent.id)
+        supplement_row = next(row for row in listed.data if row["id"] == second_supplement.id)
+        self.assertEqual(parent_row["total_amount"], "20000.00")
+        self.assertEqual(len(parent_row["supplement_contracts"]), 2)
+        self.assertEqual(supplement_row["supplement_of"], parent.id)
+        self.assertEqual(supplement_row["supplement_of_no"], "HT-SUP-001")
+
+    def test_supplement_change_validation(self):
+        self.client.force_authenticate(self.admin)
+        parent = Contract.objects.create(
+            contract_no="HT-SUP-VALID", name="验证合同", category=self.category,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="10000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        no_amount = self.client.post(
+            f"/api/v1/contracts/{parent.pk}/changes/",
+            {
+                "change_type": "supplement", "changed_on": "2026-03-01",
+                "new_start_date": "2026-03-01", "new_end_date": "2026-06-30",
+                "notes": "缺少金额",
+            }, format="json",
+        )
+        self.assertEqual(no_amount.status_code, 400)
+        self.assertIn("补充协议必须填写补充金额。", no_amount.data["errors"]["new_amount"][0])
+
+        bad_dates = self.client.post(
+            f"/api/v1/contracts/{parent.pk}/changes/",
+            {
+                "change_type": "supplement", "changed_on": "2026-03-01",
+                "new_start_date": "2026-06-01", "new_end_date": "2026-03-01",
+                "new_amount": "5000.00", "notes": "日期颠倒",
+            }, format="json",
+        )
+        self.assertEqual(bad_dates.status_code, 400)
+        self.assertIn(
+            "补充协议结束日期不能早于开始日期。",
+            bad_dates.data["errors"]["new_end_date"][0],
+        )
+
+    def test_supplement_change_rejected_on_supplement_contract(self):
+        self.client.force_authenticate(self.admin)
+        parent = Contract.objects.create(
+            contract_no="HT-SUP-NEST", name="嵌套合同", category=self.category,
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="10000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        supplement = Contract.objects.create(
+            contract_no="HT-SUP-NEST-S01", name="嵌套合同（补充协议 1）",
+            category=self.category, amount="2000.00", supplement_of=parent,
+            start_date=date(2026, 3, 1), end_date=date(2026, 6, 30),
+            status=Contract.Status.ACTIVE,
+        )
+        failed = self.client.post(
+            f"/api/v1/contracts/{supplement.pk}/changes/",
+            {
+                "change_type": "supplement", "changed_on": "2026-04-01",
+                "new_start_date": "2026-04-01", "new_end_date": "2026-05-31",
+                "new_amount": "1000.00", "notes": "不应允许",
+            }, format="json",
+        )
+        self.assertEqual(failed.status_code, 400)
+        self.assertIn("补充协议请登记在母合同上", failed.data["errors"]["change_type"][0])
+
+    def test_delete_contract_with_supplements_is_blocked(self):
+        self.client.force_authenticate(self.admin)
+        parent = Contract.objects.create(
+            contract_no="HT-SUP-DEL", name="删除保护合同", category=self.category,
+            amount="10000.00", status=Contract.Status.ACTIVE,
+        )
+        Contract.objects.create(
+            contract_no="HT-SUP-DEL-S01", name="删除保护合同（补充协议 1）",
+            category=self.category, amount="2000.00", supplement_of=parent,
+            status=Contract.Status.ACTIVE,
+        )
+        deleted = self.client.delete(f"/api/v1/contracts/{parent.pk}/")
+        self.assertEqual(deleted.status_code, 400)
+        self.assertIn("请先删除全部补充协议合同", deleted.data["message"])
 
     def test_contract_search_and_type_filter(self):
         self.client.force_authenticate(self.admin)

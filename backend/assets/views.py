@@ -182,6 +182,14 @@ def _stream_remote_file(record, as_attachment):
     return response
 
 
+def _next_supplement_contract_no(parent, index):
+    candidate = f"{parent.contract_no}-S{index:02d}"
+    while Contract.objects.filter(contract_no=candidate).exists():
+        index += 1
+        candidate = f"{parent.contract_no}-S{index:02d}"
+    return candidate
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):
@@ -1507,9 +1515,9 @@ class ContractViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Contract.objects.select_related(
-            "contract_type", "supplier", "category", "department", "owner", "previous_contract"
+            "contract_type", "supplier", "category", "department", "owner", "previous_contract", "supplement_of"
         ).prefetch_related(
-            "attachments__uploaded_by", "attachments__change", "changes__created_by", "renewal_contracts"
+            "attachments__uploaded_by", "attachments__change", "changes__created_by", "renewal_contracts", "supplement_contracts"
         )
         if not any(user_can_manage(self.request.user, scope) for scope in ("contracts", "expenses", "procurement")):
             return queryset.none()
@@ -1565,6 +1573,8 @@ class ContractViewSet(viewsets.ModelViewSet):
         serializer = ContractChangeSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        if data["change_type"] == ContractChange.ChangeType.SUPPLEMENT:
+            return self._register_supplement_change(contract, data, request.user)
         effective_start = data.get("new_start_date") or contract.start_date
         effective_end = data.get("new_end_date") or contract.end_date
         if effective_start and effective_end and effective_end < effective_start:
@@ -1593,8 +1603,60 @@ class ContractViewSet(viewsets.ModelViewSet):
             contract.save()
         return Response(ContractChangeSerializer(change).data, status=201)
 
+    def _register_supplement_change(self, parent, data, user):
+        """把补充协议登记为一份附属合同，母合同金额与补充金额在列表界面自动合计。"""
+        if parent.supplement_of_id:
+            return Response(
+                {"errors": {"change_type": ["补充协议请登记在母合同上，不能在补充协议上再次登记补充协议。"]}},
+                status=400,
+            )
+        with transaction.atomic():
+            index = parent.supplement_contracts.count() + 1
+            contract_no = _next_supplement_contract_no(parent, index)
+            supplement = Contract.objects.create(
+                contract_no=contract_no,
+                name=f"{parent.name}（补充协议 {index}）",
+                contract_type=parent.contract_type,
+                supplier=parent.supplier,
+                category=parent.category,
+                department=parent.department,
+                owner=parent.owner,
+                status=Contract.Status.ACTIVE,
+                start_date=data["new_start_date"],
+                end_date=data["new_end_date"],
+                amount=data["new_amount"],
+                renewal_notice_days=parent.renewal_notice_days,
+                auto_renew=False,
+                supplement_of=parent,
+            )
+            change = ContractChange.objects.create(
+                contract=parent,
+                change_type=ContractChange.ChangeType.SUPPLEMENT,
+                changed_on=data["changed_on"],
+                old_start_date=parent.start_date,
+                old_end_date=parent.end_date,
+                old_amount=parent.amount,
+                new_start_date=supplement.start_date,
+                new_end_date=supplement.end_date,
+                new_amount=supplement.amount,
+                notes=data["notes"],
+                created_by=user,
+            )
+        payload = ContractChangeSerializer(change).data
+        payload["supplement"] = {
+            "id": supplement.id,
+            "contract_no": supplement.contract_no,
+            "name": supplement.name,
+            "amount": str(supplement.amount),
+            "start_date": supplement.start_date,
+            "end_date": supplement.end_date,
+        }
+        return Response(payload, status=201)
+
     def destroy(self, request, *args, **kwargs):
         contract = self.get_object()
+        if contract.supplement_contracts.exists():
+            return Response({"message": "该合同存在附属的补充协议合同，请先删除全部补充协议合同。"}, status=400)
         try:
             for attachment in contract.attachments.all():
                 nextcloud_storage.delete(attachment.remote_path)

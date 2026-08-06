@@ -1,6 +1,7 @@
 from datetime import date
 import re
 import uuid
+from decimal import Decimal
 
 from django.contrib.auth import authenticate, get_user_model
 from django.db import transaction
@@ -737,10 +738,14 @@ class ContractSerializer(serializers.ModelSerializer):
     changes = serializers.SerializerMethodField()
     previous_contract_no = serializers.CharField(source="previous_contract.contract_no", read_only=True, default="")
     renewal_contracts = serializers.SerializerMethodField()
+    supplement_of = serializers.PrimaryKeyRelatedField(read_only=True)
+    supplement_of_no = serializers.CharField(source="supplement_of.contract_no", read_only=True, default="")
+    supplement_contracts = serializers.SerializerMethodField()
+    total_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Contract
-        fields = ("id", "contract_no", "name", "contract_type", "contract_type_name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "renewal_notice_days", "auto_renew", "previous_contract", "previous_contract_no", "renewal_contracts", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "changes", "created_at", "updated_at")
+        fields = ("id", "contract_no", "name", "contract_type", "contract_type_name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "total_amount", "renewal_notice_days", "auto_renew", "previous_contract", "previous_contract_no", "renewal_contracts", "supplement_of", "supplement_of_no", "supplement_contracts", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "changes", "created_at", "updated_at")
         read_only_fields = ("previous_contract",)
 
     def get_owner_name(self, obj):
@@ -768,6 +773,28 @@ class ContractSerializer(serializers.ModelSerializer):
             }
             for item in obj.renewal_contracts.all()
         ]
+
+    def get_supplement_contracts(self, obj):
+        return [
+            {
+                "id": item.id,
+                "contract_no": item.contract_no,
+                "name": item.name,
+                "amount": item.amount,
+                "start_date": item.start_date,
+                "end_date": item.end_date,
+                "status": item.status,
+                "status_label": item.get_status_display(),
+            }
+            for item in obj.supplement_contracts.all()
+        ]
+
+    def get_total_amount(self, obj):
+        total = obj.amount + sum(
+            (item.amount for item in obj.supplement_contracts.all()),
+            Decimal("0"),
+        )
+        return str(total)
 
     def validate(self, attrs):
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
@@ -850,6 +877,14 @@ class ContractChangeSerializer(serializers.ModelSerializer):
         new_start = attrs.get("new_start_date")
         new_end = attrs.get("new_end_date")
         new_amount = attrs.get("new_amount")
+        if change_type == ContractChange.ChangeType.SUPPLEMENT:
+            if new_amount is None:
+                raise serializers.ValidationError({"new_amount": "补充协议必须填写补充金额。"})
+            if not new_start or not new_end:
+                raise serializers.ValidationError("补充协议必须填写补充合同的开始日期和结束日期。")
+            if new_end < new_start:
+                raise serializers.ValidationError({"new_end_date": "补充协议结束日期不能早于开始日期。"})
+            return attrs
         if change_type == ContractChange.ChangeType.EXTENSION and not new_end:
             raise serializers.ValidationError({"new_end_date": "延期续约必须填写新的结束日期。"})
         if change_type == ContractChange.ChangeType.AMOUNT and new_amount is None:

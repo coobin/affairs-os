@@ -12,6 +12,7 @@ const suppliers = ref<Supplier[]>([]);
 const categories = ref<ExpenseCategory[]>([]);
 const contractTypes = ref<ContractType[]>([]);
 const error = ref("");
+const formError = ref("");
 const loading = ref(false);
 const filters = reactive({ q: "", contract_type: "", status: "" });
 
@@ -26,6 +27,7 @@ const historyIndex = ref(0);
 const historyLoading = ref(false);
 const historyError = ref("");
 const changeContract = ref<Contract | null>(null);
+const changeError = ref("");
 const fileUploading = ref(false);
 const fileError = ref("");
 const documentType = ref("original");
@@ -47,8 +49,8 @@ const due = computed(() => rows.value.filter((item) =>
   && item.days_to_expiry <= item.renewal_notice_days,
 ));
 const activeAmount = computed(() => rows.value
-  .filter((item) => item.status === "active")
-  .reduce((sum, item) => sum + Number(item.amount), 0));
+  .filter((item) => item.status === "active" && !item.supplement_of)
+  .reduce((sum, item) => sum + Number(item.total_amount), 0));
 const activeHistory = computed(() => historyRecords.value[historyIndex.value] || null);
 const attachmentGroups = computed(() => {
   if (!selectedContract.value) return [];
@@ -95,6 +97,16 @@ function clearFilters() {
   void load();
 }
 
+function errorText(err: unknown, fallback: string) {
+  if (!(err instanceof ApiError)) return fallback;
+  if (typeof err.errors === "string") return err.errors || err.message;
+  if (err.errors && typeof err.errors === "object") {
+    const parts = Object.values(err.errors).flat().filter(Boolean);
+    if (parts.length) return parts.join(" ");
+  }
+  return err.message || fallback;
+}
+
 function assignForm(item?: Contract) {
   Object.assign(form, item ? {
     contract_no: item.contract_no, name: item.name, contract_type: item.contract_type || "",
@@ -114,6 +126,7 @@ function openForm(item?: Contract) {
   editing.value = item || null;
   renewingFrom.value = null;
   assignForm(item);
+  formError.value = "";
   showForm.value = true;
 }
 
@@ -123,10 +136,12 @@ function openRenew(item: Contract) {
   renewingFrom.value = item;
   assignForm(item);
   Object.assign(form, { contract_no: "", status: "active", start_date: "", end_date: "", kingdee_code: "", external_id: "" });
+  formError.value = "";
   showForm.value = true;
 }
 
 async function saveContract() {
+  formError.value = "";
   const payload = {
     ...form,
     contract_type: form.contract_type ? Number(form.contract_type) : null,
@@ -144,12 +159,13 @@ async function saveContract() {
     showForm.value = false;
     await load();
   } catch (err) {
-    error.value = err instanceof ApiError ? Object.values(err.errors).flat().join(" ") || err.message : "合同未保存。";
+    formError.value = errorText(err, "合同未保存。");
   }
 }
 
 function openChange(item: Contract) {
   changeContract.value = item;
+  changeError.value = "";
   Object.assign(changeForm, {
     change_type: "extension", changed_on: new Date().toISOString().slice(0, 10),
     new_start_date: "", new_end_date: "", new_amount: "", notes: "",
@@ -158,6 +174,7 @@ function openChange(item: Contract) {
 
 async function saveChange() {
   if (!changeContract.value) return;
+  changeError.value = "";
   try {
     await api(`/contracts/${changeContract.value.id}/changes/`, {
       method: "POST",
@@ -171,7 +188,7 @@ async function saveChange() {
     changeContract.value = null;
     await load();
   } catch (err) {
-    error.value = err instanceof ApiError ? Object.values(err.errors).flat().join(" ") || err.message : "合同变更未保存。";
+    changeError.value = errorText(err, "合同变更未保存。");
   }
 }
 
@@ -275,12 +292,12 @@ onMounted(load);
         <thead><tr><th>合同与相对方</th><th>履约期间与状态</th><th>金额与科目</th><th>负责人</th><th>档案</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="item in rows" :key="item.id" :class="{ due: due.includes(item), expired: item.status === 'expired' }">
-            <td data-label="合同与相对方"><div class="contract-title-line"><strong>{{ item.name }}</strong><span>{{ item.contract_type_name || '未分类' }}</span></div><small>{{ item.contract_no }} · {{ item.supplier_name || '未设置供应商' }}</small><span v-if="item.previous_contract_no" class="lineage-tag">续自 {{ item.previous_contract_no }}</span><span v-else-if="item.renewal_contracts.length" class="lineage-tag">已续签 {{ item.renewal_contracts[0].contract_no }}</span></td>
+            <td data-label="合同与相对方"><div class="contract-title-line"><strong>{{ item.name }}</strong><span>{{ item.contract_type_name || '未分类' }}</span></div><small>{{ item.contract_no }} · {{ item.supplier_name || '未设置供应商' }}</small><span v-if="item.supplement_of_no" class="lineage-tag">附属于 {{ item.supplement_of_no }}</span><span v-else-if="item.previous_contract_no" class="lineage-tag">续自 {{ item.previous_contract_no }}</span><span v-else-if="item.renewal_contracts.length" class="lineage-tag">已续签 {{ item.renewal_contracts[0].contract_no }}</span><span v-else-if="item.supplement_contracts.length" class="lineage-tag">含 {{ item.supplement_contracts.length }} 份补充协议</span></td>
             <td data-label="履约期间与状态"><strong>{{ item.start_date || '—' }} → {{ item.end_date || '—' }}</strong><div class="contract-status-line"><span class="record-status" :data-status="item.status">{{ item.status_label }}</span><small :class="{ 'due-copy': due.includes(item) }">{{ dueText(item) }}</small></div></td>
-            <td data-label="金额与科目"><strong>{{ money(item.amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
+            <td data-label="金额与科目"><strong>{{ money(item.total_amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
             <td data-label="负责人"><strong>{{ item.owner_name || '未设置' }}</strong><small>{{ item.department_name || '未设置部门' }}</small></td>
             <td data-label="档案"><strong>{{ item.attachments.length }} 个文件</strong><small>{{ item.changes.length }} 次变更 · {{ item.auto_renew ? '约定续期' : '人工处理' }}</small></td>
-            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="openHistory(item)">历史</button><button v-if="!item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button></td>
+            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="openHistory(item)">历史</button><button v-if="!item.supplement_of && !item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!item.supplement_of && !['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button></td>
           </tr>
         </tbody>
       </table>
@@ -291,6 +308,7 @@ onMounted(load);
       <form class="modal-panel admin-form-modal contract-form-modal" @submit.prevent="saveContract">
         <header><div><p class="eyebrow">{{ formMode === 'renew' ? `续签自 ${renewingFrom?.contract_no}` : '合同台账' }}</p><h2>{{ formMode === 'edit' ? '编辑合同基础资料' : formMode === 'renew' ? '建立下一期合同' : '登记行政合同' }}</h2></div><button type="button" class="icon-button" @click="showForm = false">×</button></header>
         <div class="contract-form-body">
+          <p v-if="formError" class="form-error">{{ formError }}</p>
           <p v-if="formMode === 'edit'" class="modal-guidance">合同期限和金额请通过“登记变更”调整，系统会保留调整前的数据。</p>
           <section class="contract-form-section">
             <header><div><strong>基础资料</strong><span>合同身份、分类和经办信息</span></div></header>
@@ -331,15 +349,24 @@ onMounted(load);
     <div v-if="changeContract" class="modal-backdrop" @click.self="changeContract = null">
       <form class="modal-panel admin-form-modal contract-change-modal" @submit.prevent="saveChange">
         <header><div><p class="eyebrow">{{ changeContract.contract_no }}</p><h2>登记合同变更</h2></div><button type="button" class="icon-button" @click="changeContract = null">×</button></header>
-        <p class="modal-guidance">保存后会更新当前有效值，同时永久保留原期限、原金额和本次说明。</p>
+        <p class="modal-guidance">{{ changeForm.change_type === 'supplement' ? '补充协议将登记为附属合同，合同列表会自动把本次补充金额合计到母合同金额。' : '保存后会更新当前有效值，同时永久保留原期限、原金额和本次说明。' }}</p>
+        <p v-if="changeError" class="form-error change-form-error">{{ changeError }}</p>
         <div class="form-grid">
           <label><span>变更类型</span><select v-model="changeForm.change_type"><option value="extension">延期续约</option><option value="supplement">补充协议</option><option value="amount">金额调整</option><option value="termination">提前终止</option><option value="other">其他变更</option></select></label>
           <label><span>生效日期</span><input v-model="changeForm.changed_on" type="date" required /></label>
-          <label><span>新开始日期</span><input v-model="changeForm.new_start_date" type="date" /></label>
-          <label><span>新结束日期</span><input v-model="changeForm.new_end_date" type="date" :required="changeForm.change_type === 'extension'" /></label>
-          <label><span>新合同金额</span><input v-model="changeForm.new_amount" type="number" min="0" step="0.01" :required="changeForm.change_type === 'amount'" /></label>
-          <label class="wide"><span>变更说明</span><textarea v-model="changeForm.notes" required placeholder="说明延期、调价、终止或补充约定的原因"></textarea></label>
+          <template v-if="changeForm.change_type === 'supplement'">
+            <label><span>补充开始日期</span><input v-model="changeForm.new_start_date" type="date" required /></label>
+            <label><span>补充结束日期</span><input v-model="changeForm.new_end_date" type="date" required /></label>
+            <label><span>补充金额</span><input v-model="changeForm.new_amount" type="number" min="0" step="0.01" required /></label>
+          </template>
+          <template v-else>
+            <label><span>新开始日期</span><input v-model="changeForm.new_start_date" type="date" /></label>
+            <label><span>新结束日期</span><input v-model="changeForm.new_end_date" type="date" :required="changeForm.change_type === 'extension'" /></label>
+            <label><span>新合同金额</span><input v-model="changeForm.new_amount" type="number" min="0" step="0.01" :required="changeForm.change_type === 'amount'" /></label>
+          </template>
+          <label class="wide"><span>变更说明</span><textarea v-model="changeForm.notes" required :placeholder="changeForm.change_type === 'supplement' ? '说明补充协议的具体约定' : '说明延期、调价、终止或补充约定的原因'"></textarea></label>
         </div>
+        <p v-if="changeForm.change_type === 'supplement'" class="modal-guidance supplement-hint">将自动生成附属合同编号 {{ changeContract.contract_no }}-S…，名称沿用母合同，登记后可在列表中查看。</p>
         <button class="primary-button full">保存变更记录</button>
       </form>
     </div>
@@ -371,7 +398,7 @@ onMounted(load);
               <div><dt>到期处理</dt><dd>{{ activeHistory.auto_renew ? '合同约定自动续期' : '到期人工处理' }}</dd></div>
             </dl>
             <p v-if="activeHistory.notes" class="history-notes"><strong>合同备注</strong>{{ activeHistory.notes }}</p>
-            <section class="history-section"><header><div><strong>变更记录</strong><span>延期、调价、补充协议与终止记录</span></div><b>{{ activeHistory.changes.length }}</b></header><div v-if="activeHistory.changes.length" class="history-change-list"><article v-for="change in activeHistory.changes" :key="change.id"><div><strong>{{ change.change_type_label }}</strong><time>{{ change.changed_on }}</time></div><p>{{ change.notes }}</p><small v-if="change.new_end_date">结束日期：{{ change.old_end_date || '—' }} → {{ change.new_end_date }}</small><small v-if="change.new_amount">合同金额：{{ money(change.old_amount || 0) }} → {{ money(change.new_amount) }}</small></article></div><p v-else class="history-compact-empty">本期合同没有变更记录。</p></section>
+            <section class="history-section"><header><div><strong>变更记录</strong><span>延期、调价、补充协议与终止记录</span></div><b>{{ activeHistory.changes.length }}</b></header><div v-if="activeHistory.changes.length" class="history-change-list"><article v-for="change in activeHistory.changes" :key="change.id"><div><strong>{{ change.change_type_label }}</strong><time>{{ change.changed_on }}</time></div><p>{{ change.notes }}</p><small v-if="change.change_type === 'supplement'">补充金额：{{ money(change.new_amount || 0) }} · 补充期间：{{ change.new_start_date || '—' }} 至 {{ change.new_end_date || '—' }}</small><small v-else-if="change.new_end_date">结束日期：{{ change.old_end_date || '—' }} → {{ change.new_end_date }}</small><small v-else-if="change.new_amount">合同金额：{{ money(change.old_amount || 0) }} → {{ money(change.new_amount) }}</small></article></div><p v-else class="history-compact-empty">本期合同没有变更记录。</p></section>
             <section class="history-section"><header><div><strong>合同文件</strong><span>原件、扫描件与本期补充文件</span></div><b>{{ activeHistory.attachments.length }}</b></header><div v-if="activeHistory.attachments.length" class="history-file-list"><button v-for="file in activeHistory.attachments" :key="file.id" @click="downloadFile(file)"><span class="file-kind">{{ file.original_name.split('.').pop()?.slice(0, 4).toUpperCase() }}</span><span><strong>{{ file.original_name }}</strong><small>{{ file.change_label }} · {{ fileSize(file.size_bytes) }}</small></span><AppIcon name="download" :size="16" /></button></div><p v-else class="history-compact-empty">本期合同没有归档文件。</p></section>
           </section>
         </div>

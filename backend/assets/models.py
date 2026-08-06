@@ -812,6 +812,7 @@ class Contract(TimeStampedModel):
     renewal_notice_days = models.PositiveSmallIntegerField("到期提醒天数", default=30)
     auto_renew = models.BooleanField("自动续签", default=False)
     previous_contract = models.ForeignKey("self", verbose_name="上一期合同", null=True, blank=True, on_delete=models.SET_NULL, related_name="renewal_contracts")
+    supplement_of = models.ForeignKey("self", verbose_name="母合同", null=True, blank=True, on_delete=models.CASCADE, related_name="supplement_contracts")
     kingdee_code = models.CharField("金蝶编码", max_length=64, blank=True, db_index=True)
     external_id = models.CharField("外部系统标识", max_length=100, blank=True, db_index=True)
     notes = models.TextField("备注", blank=True)
