@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 
-import { api, ApiError, download } from "../api";
+import { api, download } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import StatusPill from "../components/StatusPill.vue";
 import type { Asset, Lookups, Paginated } from "../types";
 
-const props = defineProps<{ lookups: Lookups | null; canManage: boolean; isSuperuser: boolean }>();
+const props = defineProps<{ lookups: Lookups | null; canManage: boolean }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 
 type AssetListState = {
@@ -79,15 +79,6 @@ async function loadAssets() {
   }
 }
 
-async function deleteAsset(asset: Asset) {
-  if (!window.confirm(`确认删除资产“${asset.asset_tag} · ${asset.name}”？删除后无法恢复。`)) return;
-  try {
-    await api(`/assets/${asset.id}/`, { method: "DELETE" });
-    await loadAssets();
-  } catch (err) {
-    error.value = err instanceof ApiError ? err.message : "资产删除失败。";
-  }
-}
 
 function clearFilters() {
   query.value = "";
@@ -253,10 +244,7 @@ onMounted(loadAssets);
               <td><strong>{{ asset.assignee_name || "—" }}</strong><small>{{ asset.department_name || "暂无归属部门" }}</small></td>
               <td>{{ asset.location_name || "未设置" }}</td>
               <td><strong>{{ asset.kingdee_code || "—" }}</strong><small v-if="asset.expected_return_at" class="loan-date">应还 {{ formatDate(asset.expected_return_at) }}</small></td>
-              <td class="asset-row-actions">
-                <button v-if="props.isSuperuser" class="text-button danger" @click.stop="deleteAsset(asset)">删除</button>
-                <AppIcon name="chevron-right" :size="18" />
-              </td>
+              <td><AppIcon name="chevron-right" :size="18" /></td>
             </tr>
           </tbody>
         </table>

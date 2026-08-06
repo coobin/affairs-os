@@ -201,12 +201,12 @@ onUnmounted(() => {
         v-else-if="route.name === 'assets'"
         :lookups="lookups"
         :can-manage="hasScope('assets')"
-        :is-superuser="user.is_superuser"
         @navigate="navigate"
       />
       <AssetFormView
         v-else-if="route.name === 'asset-new'"
         :lookups="lookups"
+        :is-superuser="user.is_superuser"
         @navigate="navigate"
       />
       <AssetImportView
@@ -235,6 +235,7 @@ onUnmounted(() => {
         v-else-if="route.name === 'asset-edit'"
         :asset-id="route.id!"
         :lookups="lookups"
+        :is-superuser="user.is_superuser"
         @navigate="navigate"
       />
       <AssetDetailView

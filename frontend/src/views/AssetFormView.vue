@@ -6,7 +6,7 @@ import AppIcon from "../components/AppIcon.vue";
 import PersonSearchSelect from "../components/PersonSearchSelect.vue";
 import type { Asset, Lookups } from "../types";
 
-const props = defineProps<{ lookups: Lookups | null; assetId?: number }>();
+const props = defineProps<{ lookups: Lookups | null; assetId?: number; isSuperuser: boolean }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 const isEditing = computed(() => Boolean(props.assetId));
 
@@ -51,6 +51,7 @@ const displayName = computed(() => {
 });
 const loading = ref(false);
 const loadingAsset = ref(false);
+const deleting = ref(false);
 const error = ref("");
 const fieldErrors = ref<Record<string, unknown>>({});
 
@@ -127,6 +128,21 @@ async function save() {
     }
   } finally {
     loading.value = false;
+  }
+}
+
+async function deleteAsset() {
+  if (!props.assetId) return;
+  if (!window.confirm(`确认删除资产“${form.asset_tag} · ${displayName.value}”？删除后无法恢复。`)) return;
+  deleting.value = true;
+  error.value = "";
+  try {
+    await api(`/assets/${props.assetId}/`, { method: "DELETE" });
+    emit("navigate", "/assets");
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : "资产删除失败。";
+  } finally {
+    deleting.value = false;
   }
 }
 
@@ -304,6 +320,9 @@ onMounted(loadAsset);
           <button class="primary-button full" :disabled="loading">
             {{ loading ? "正在保存…" : isEditing ? "保存修改" : "保存资产" }}
             <AppIcon name="chevron-right" :size="18" />
+          </button>
+          <button v-if="isEditing && isSuperuser" type="button" class="danger-button full" :disabled="deleting" @click="deleteAsset">
+            {{ deleting ? "正在删除…" : "删除资产" }}
           </button>
           <button type="button" class="text-button full" @click="emit('navigate', isEditing ? `/assets/${props.assetId}` : '/assets')">取消</button>
         </div>
