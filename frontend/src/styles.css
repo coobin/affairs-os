@@ -3955,6 +3955,7 @@ label b {
 .vehicle-cards, .supplier-grid, .contract-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .vehicle-cards article, .supplier-grid article, .contract-grid article { padding: 20px; border: 1px solid var(--line); border-radius: 17px; background: #fff; }
 .vehicle-cards article header, .supplier-grid article header, .contract-grid article header, .supplier-grid article footer, .contract-grid article footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.vehicle-card-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .vehicle-plate { padding: 7px 11px; border-radius: 7px; background: #17669a; color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 900; letter-spacing: .08em; }
 .vehicle-cards h2, .supplier-grid h2, .contract-grid h2 { margin: 18px 0 5px; font-size: 20px; }
 .vehicle-cards p, .supplier-grid p, .contract-grid p { margin: 0; color: var(--muted); }

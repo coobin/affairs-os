@@ -1870,6 +1870,19 @@ class VehicleViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_value)
         return queryset
 
+    def destroy(self, request, *args, **kwargs):
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed("DELETE", detail="只有超级管理员可以删除车辆。")
+        vehicle = self.get_object()
+        try:
+            vehicle.delete()
+        except ProtectedError:
+            return Response(
+                {"message": "该车辆已有派车或费用记录，无法删除，请先处置为“已处置”。"},
+                status=400,
+            )
+        return Response(status=204)
+
 
 class VehicleDispatchViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]

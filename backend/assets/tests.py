@@ -2283,6 +2283,50 @@ class AdministrativePhaseTests(TestCase):
         )
         self.assertEqual(blocked.status_code, 400)
 
+    def test_superuser_can_delete_vehicle(self):
+        self.client.force_authenticate(self.admin)
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BTEST01",
+            name="测试车辆",
+            seats=5,
+            department=self.department,
+        )
+        deleted = self.client.delete(f"/api/v1/vehicles/{vehicle.pk}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(Vehicle.objects.filter(pk=vehicle.pk).exists())
+
+    def test_non_superuser_cannot_delete_vehicle(self):
+        AssetManagerRole.objects.create(user=self.employee, scopes=["vehicles"])
+        self.client.force_authenticate(self.employee)
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BTEST02",
+            name="保留车辆",
+            seats=5,
+            department=self.department,
+        )
+        deleted = self.client.delete(f"/api/v1/vehicles/{vehicle.pk}/")
+        self.assertEqual(deleted.status_code, 405)
+        self.assertTrue(Vehicle.objects.filter(pk=vehicle.pk).exists())
+
+    def test_superuser_delete_vehicle_blocked_when_referenced(self):
+        self.client.force_authenticate(self.admin)
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BTEST03",
+            name="引用车辆",
+            seats=5,
+            department=self.department,
+        )
+        VehicleExpense.objects.create(
+            vehicle=vehicle,
+            expense_type=VehicleExpense.ExpenseType.MAINTENANCE,
+            occurred_on=date(2026, 8, 1),
+            amount="500.00",
+        )
+        deleted = self.client.delete(f"/api/v1/vehicles/{vehicle.pk}/")
+        self.assertEqual(deleted.status_code, 400)
+        self.assertIn("无法删除", deleted.data["message"])
+        self.assertTrue(Vehicle.objects.filter(pk=vehicle.pk).exists())
+
     def test_contract_search_and_type_filter(self):
         self.client.force_authenticate(self.admin)
         service_type = ContractType.objects.create(code="FILTER-SERVICE", name="过滤服务合同")

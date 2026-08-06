@@ -193,7 +193,7 @@ onUnmounted(() => {
     <main class="app-main">
       <DashboardView v-if="route.name === 'dashboard'" :scopes="user.management_scopes" @navigate="navigate" />
       <RequestsView v-else-if="route.name === 'requests'" :can-manage="hasScope('assets') || hasScope('inventory')" />
-      <VehiclesView v-else-if="route.name === 'vehicles'" :lookups="lookups" :can-manage="hasScope('vehicles')" />
+      <VehiclesView v-else-if="route.name === 'vehicles'" :lookups="lookups" :can-manage="hasScope('vehicles')" :is-superuser="user.is_superuser" />
       <ProcurementView v-else-if="route.name === 'procurement'" :can-manage="hasScope('procurement')" />
       <ExpensesView v-else-if="route.name === 'expenses'" :lookups="lookups" />
       <ContractsView v-else-if="route.name === 'contracts'" :lookups="lookups" :is-superuser="user.is_superuser" />
