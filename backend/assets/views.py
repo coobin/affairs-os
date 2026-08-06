@@ -1522,7 +1522,7 @@ class ContractViewSet(viewsets.ModelViewSet):
         if not any(user_can_manage(self.request.user, scope) for scope in ("contracts", "expenses", "procurement")):
             return queryset.none()
         if self.action == "list":
-            queryset = queryset.filter(renewal_contracts__isnull=True)
+            queryset = queryset.filter(renewal_contracts__isnull=True, supplement_of__isnull=True)
         query = self.request.query_params.get("q", "").strip()
         status_value = self.request.query_params.get("status", "").strip()
         contract_type = self.request.query_params.get("contract_type", "").strip()

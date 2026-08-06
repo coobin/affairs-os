@@ -2026,12 +2026,18 @@ class AdministrativePhaseTests(TestCase):
         second_supplement = Contract.objects.get(contract_no="HT-SUP-001-S02")
 
         listed = self.client.get("/api/v1/contracts/")
+        listed_ids = [row["id"] for row in listed.data]
+        self.assertIn(parent.id, listed_ids)
+        self.assertNotIn(second_supplement.id, listed_ids)
         parent_row = next(row for row in listed.data if row["id"] == parent.id)
-        supplement_row = next(row for row in listed.data if row["id"] == second_supplement.id)
         self.assertEqual(parent_row["total_amount"], "20000.00")
         self.assertEqual(len(parent_row["supplement_contracts"]), 2)
-        self.assertEqual(supplement_row["supplement_of"], parent.id)
-        self.assertEqual(supplement_row["supplement_of_no"], "HT-SUP-001")
+
+        history = self.client.get(f"/api/v1/contracts/{parent.pk}/history/")
+        current = history.data[-1]
+        self.assertEqual(current["id"], parent.id)
+        self.assertEqual(len(current["supplement_contracts"]), 2)
+        self.assertEqual(current["total_amount"], "20000.00")
 
     def test_supplement_change_validation(self):
         self.client.force_authenticate(self.admin)
