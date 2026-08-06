@@ -1743,6 +1743,33 @@ class EmailNotificationTests(TestCase):
         self.assertIn("今天到期", due_subject)
         self.assertIn("已经超期", overdue_subject)
 
+    def test_user_deactivation_sends_manager_email_once(self):
+        self.asset.status = Asset.Status.ASSIGNED
+        self.asset.assigned_to = self.requester
+        self.asset.save()
+
+        self.requester.is_active = False
+        self.requester.save()
+
+        notification = EmailNotification.objects.get(event_type="user_deactivated")
+        self.assertEqual(notification.recipient_email, "manager@example.com")
+        self.assertIn("员工离职提醒：申请人", notification.subject)
+        self.assertIn("IT-NB-2026-301", notification.body)
+        self.assertIn("名下合同 0 份", notification.body)
+        self.assertIn("请及时办理交接", notification.body)
+
+        self.requester.save()
+        self.assertEqual(EmailNotification.objects.filter(event_type="user_deactivated").count(), 1)
+
+    def test_user_reenable_does_not_send_deactivation_email(self):
+        self.requester.is_active = True
+        self.requester.save()
+        self.assertFalse(EmailNotification.objects.filter(event_type="user_deactivated").exists())
+
+    def test_creating_user_does_not_send_deactivation_email(self):
+        User.objects.create_user("brand_new_user", password="pass", email="new@example.com")
+        self.assertFalse(EmailNotification.objects.filter(event_type="user_deactivated").exists())
+
 
 @override_settings(EMAIL_NOTIFICATIONS_ENABLED=False)
 class AdministrativePhaseTests(TestCase):

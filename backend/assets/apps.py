@@ -5,3 +5,6 @@ class AssetsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "assets"
     verbose_name = "资产管理"
+
+    def ready(self):
+        from . import signals  # noqa: F401
