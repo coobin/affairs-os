@@ -2327,6 +2327,83 @@ class AdministrativePhaseTests(TestCase):
         self.assertIn("无法删除", deleted.data["message"])
         self.assertTrue(Vehicle.objects.filter(pk=vehicle.pk).exists())
 
+    def test_superuser_can_delete_vehicle_expense_with_ledger_record(self):
+        self.client.force_authenticate(self.admin)
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BTEST04",
+            name="费用车辆",
+            seats=5,
+            department=self.department,
+        )
+        created = self.client.post(
+            "/api/v1/vehicle-expenses/",
+            {
+                "vehicle": vehicle.pk,
+                "expense_type": "maintenance",
+                "occurred_on": "2026-08-01",
+                "amount": "500.00",
+                "notes": "保养",
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        record = VehicleExpense.objects.get(pk=created.data["id"])
+        self.assertIsNotNone(record.expense)
+        deleted = self.client.delete(f"/api/v1/vehicle-expenses/{record.pk}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(VehicleExpense.objects.filter(pk=record.pk).exists())
+        self.assertFalse(AdministrativeExpense.objects.filter(pk=record.expense_id).exists())
+
+    def test_non_superuser_cannot_delete_vehicle_expense(self):
+        AssetManagerRole.objects.create(user=self.employee, scopes=["vehicles"])
+        self.client.force_authenticate(self.employee)
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BTEST05",
+            name="保留费用",
+            seats=5,
+            department=self.department,
+        )
+        record = VehicleExpense.objects.create(
+            vehicle=vehicle,
+            expense_type=VehicleExpense.ExpenseType.MAINTENANCE,
+            occurred_on=date(2026, 8, 1),
+            amount="100.00",
+        )
+        deleted = self.client.delete(f"/api/v1/vehicle-expenses/{record.pk}/")
+        self.assertEqual(deleted.status_code, 405)
+        self.assertTrue(VehicleExpense.objects.filter(pk=record.pk).exists())
+
+    def test_edit_vehicle_expense_syncs_ledger_record(self):
+        self.client.force_authenticate(self.admin)
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BTEST06",
+            name="同步费用",
+            seats=5,
+            department=self.department,
+        )
+        created = self.client.post(
+            "/api/v1/vehicle-expenses/",
+            {
+                "vehicle": vehicle.pk,
+                "expense_type": "maintenance",
+                "occurred_on": "2026-08-01",
+                "amount": "500.00",
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        updated = self.client.patch(
+            f"/api/v1/vehicle-expenses/{created.data['id']}/",
+            {"amount": "800.00", "occurred_on": "2026-08-02"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        record = VehicleExpense.objects.get(pk=created.data["id"])
+        self.assertEqual(record.amount, Decimal("800.00"))
+        self.assertEqual(record.expense.amount, Decimal("800.00"))
+        self.assertEqual(record.expense.occurred_on, date(2026, 8, 2))
+        self.assertEqual(record.expense.fiscal_year, 2026)
+
     def test_contract_search_and_type_filter(self):
         self.client.force_authenticate(self.admin)
         service_type = ContractType.objects.create(code="FILTER-SERVICE", name="过滤服务合同")

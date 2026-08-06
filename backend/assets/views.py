@@ -2052,7 +2052,16 @@ class VehicleExpenseViewSet(viewsets.ModelViewSet):
         return queryset
 
     def destroy(self, request, *args, **kwargs):
-        return Response({"message": "费用记录不能删除，请在费用台账中登记冲销。"}, status=405)
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed(
+                "DELETE",
+                detail="只有超级管理员可以删除车辆事项与费用。",
+            )
+        record = self.get_object()
+        if record.expense:
+            record.expense.delete()
+        record.delete()
+        return Response(status=204)
 
 
 class AdministrativeExpenseViewSet(viewsets.ModelViewSet):

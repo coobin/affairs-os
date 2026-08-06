@@ -1021,6 +1021,7 @@ class VehicleExpenseSerializer(serializers.ModelSerializer):
         if instance.expense:
             expense = instance.expense
             expense.occurred_on = instance.occurred_on
+            expense.fiscal_year = instance.occurred_on.year
             expense.amount = instance.amount
             expense.department = instance.vehicle.department
             expense.supplier = instance.supplier
