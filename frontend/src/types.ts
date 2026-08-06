@@ -138,6 +138,7 @@ export type StatusOption = {
 };
 
 export type Lookups = {
+  enabled_modules: string[];
   users: User[];
   departments: LookupOption[];
   locations: (LookupOption & { kind: string; kind_label: string; address: string })[];

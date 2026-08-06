@@ -32,17 +32,19 @@ function hasScope(scope: string) {
 }
 
 const homePath = computed(() => user.value?.management_scopes?.length ? "/" : "/requests");
+const moduleEnabled = (code: string) =>
+  lookups.value?.enabled_modules?.includes(code) ?? true;
 const navItems = computed(() => [
   ...(user.value?.management_scopes?.length ? [{ path: "/", label: "首页", icon: "home" }] : []),
-  { path: "/requests", label: "领用借用", icon: "request" },
-  { path: "/vehicles", label: "车辆", icon: "asset" },
-  { path: "/procurement", label: "采购", icon: "inventory" },
-  ...(hasScope("assets") ? [{ path: "/assets", label: "资产", icon: "asset" }] : []),
-  ...(hasScope("inventory") ? [{ path: "/inventory", label: "库存", icon: "inventory" }] : []),
-  ...(hasScope("expenses") ? [{ path: "/expenses", label: "费用", icon: "chart" }] : []),
-  ...(hasScope("contracts") ? [{ path: "/contracts", label: "合同", icon: "request" }] : []),
-  ...(hasScope("reports") ? [{ path: "/reports", label: "报表", icon: "chart" }] : []),
-  ...(hasScope("settings") ? [{ path: "/settings", label: "设置", icon: "settings" }] : []),
+  ...(moduleEnabled("assets") || moduleEnabled("inventory") ? [{ path: "/requests", label: "领用借用", icon: "request" }] : []),
+  ...(moduleEnabled("vehicles") ? [{ path: "/vehicles", label: "车辆", icon: "asset" }] : []),
+  ...(moduleEnabled("procurement") ? [{ path: "/procurement", label: "采购", icon: "inventory" }] : []),
+  ...(hasScope("assets") && moduleEnabled("assets") ? [{ path: "/assets", label: "资产", icon: "asset" }] : []),
+  ...(hasScope("inventory") && moduleEnabled("inventory") ? [{ path: "/inventory", label: "库存", icon: "inventory" }] : []),
+  ...(hasScope("expenses") && moduleEnabled("expenses") ? [{ path: "/expenses", label: "费用", icon: "chart" }] : []),
+  ...(hasScope("contracts") && moduleEnabled("contracts") ? [{ path: "/contracts", label: "合同", icon: "request" }] : []),
+  ...(hasScope("reports") && moduleEnabled("reports") ? [{ path: "/reports", label: "报表", icon: "chart" }] : []),
+  ...(hasScope("settings") && moduleEnabled("settings") ? [{ path: "/settings", label: "设置", icon: "settings" }] : []),
 ]);
 
 const route = computed<{ name: string; id?: number; section?: string }>(() => {
@@ -228,7 +230,7 @@ onUnmounted(() => {
         :can-manage-assets="hasScope('assets')"
         @navigate="navigate"
       />
-      <SettingsView v-else-if="route.name === 'settings'" :is-superuser="user.is_superuser" />
+      <SettingsView v-else-if="route.name === 'settings'" :is-superuser="user.is_superuser" @refresh-lookups="loadLookups" />
       <AssetFormView
         v-else-if="route.name === 'asset-edit'"
         :asset-id="route.id!"

@@ -32,12 +32,22 @@ def management_scopes(user):
     if not user or not user.is_authenticated:
         return []
     if is_hidden_superuser(user):
-        return [value for value, _ in MANAGEMENT_MODULES]
-    try:
-        scopes = user.asset_manager_role.scopes
-    except AttributeError:
-        return []
-    return [scope for scope in scopes if scope in MANAGEMENT_SCOPE_KEYS]
+        scopes = [value for value, _ in MANAGEMENT_MODULES]
+    else:
+        try:
+            scopes = user.asset_manager_role.scopes
+        except AttributeError:
+            return []
+    scopes = [scope for scope in scopes if scope in MANAGEMENT_SCOPE_KEYS]
+    if not scopes:
+        return scopes
+    from .models import ModuleToggle
+
+    disabled = set(
+        ModuleToggle.objects.filter(code__in=scopes, is_enabled=False)
+        .values_list("code", flat=True)
+    )
+    return [scope for scope in scopes if scope not in disabled]
 
 
 def user_can_manage(user, module):

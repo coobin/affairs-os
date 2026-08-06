@@ -790,6 +790,20 @@ class ContractType(TimeStampedModel):
         return self.name
 
 
+class ModuleToggle(TimeStampedModel):
+    code = models.CharField("模块编码", max_length=32, unique=True)
+    label = models.CharField("模块名称", max_length=64)
+    is_enabled = models.BooleanField("启用", default=True)
+
+    class Meta:
+        ordering = ["code"]
+        verbose_name = "模块开关"
+        verbose_name_plural = "模块开关"
+
+    def __str__(self):
+        return f"{self.label}（{'启用' if self.is_enabled else '停用'}）"
+
+
 class Contract(TimeStampedModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "草稿"

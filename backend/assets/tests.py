@@ -2236,6 +2236,53 @@ class AdministrativePhaseTests(TestCase):
         self.assertEqual(deleted.status_code, 405)
         self.assertTrue(InventoryItem.objects.filter(pk=item.pk).exists())
 
+    def test_module_switch_disables_module_for_managers(self):
+        self.client.force_authenticate(self.admin)
+        modules = self.client.get("/api/v1/settings/modules/")
+        self.assertEqual(modules.status_code, 200)
+        codes = {item["code"] for item in modules.data}
+        self.assertIn("assets", codes)
+        self.assertNotIn("settings", codes)
+
+        toggled = self.client.patch(
+            "/api/v1/settings/modules/",
+            {"code": "assets", "enabled": False},
+            format="json",
+        )
+        self.assertEqual(toggled.status_code, 200)
+        self.assertFalse(toggled.data["enabled"])
+
+        AssetManagerRole.objects.create(user=self.employee, scopes=["assets"])
+        self.client.force_authenticate(self.employee)
+        blocked = self.client.get("/api/v1/assets/")
+        self.assertEqual(blocked.status_code, 403)
+
+        self.client.force_authenticate(self.admin)
+        lookups = self.client.get("/api/v1/lookups/")
+        self.assertNotIn("assets", lookups.data["enabled_modules"])
+        manager_settings = self.client.get("/api/v1/settings/managers/")
+        self.assertNotIn("assets", {item["value"] for item in manager_settings.data["modules"]})
+
+        self.client.patch(
+            "/api/v1/settings/modules/",
+            {"code": "assets", "enabled": True},
+            format="json",
+        )
+
+    def test_module_switch_requires_superuser(self):
+        self.client.force_authenticate(self.employee)
+        blocked = self.client.get("/api/v1/settings/modules/")
+        self.assertEqual(blocked.status_code, 403)
+
+    def test_settings_module_cannot_be_toggled(self):
+        self.client.force_authenticate(self.admin)
+        blocked = self.client.patch(
+            "/api/v1/settings/modules/",
+            {"code": "settings", "enabled": False},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 400)
+
     def test_contract_search_and_type_filter(self):
         self.client.force_authenticate(self.admin)
         service_type = ContractType.objects.create(code="FILTER-SERVICE", name="过滤服务合同")

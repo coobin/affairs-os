@@ -55,6 +55,7 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    ModuleToggle,
     PurchaseOrder,
     PurchaseRequest,
     Supplier,
@@ -641,6 +642,10 @@ class LookupView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        enabled_modules = list(
+            ModuleToggle.objects.filter(is_enabled=True)
+            .values_list("code", flat=True)
+        )
         users = User.objects.filter(is_active=True).exclude(
             username__iexact=HIDDEN_SYSTEM_USERNAME
         ).select_related(
@@ -650,6 +655,7 @@ class LookupView(APIView):
             users = users.filter(pk=request.user.pk)
         return Response(
             {
+                "enabled_modules": enabled_modules,
                 "users": UserOptionSerializer(users, many=True).data,
                 "departments": DepartmentSerializer(
                     Department.objects.filter(is_active=True), many=True
@@ -677,11 +683,16 @@ class ManagerSettingsView(APIView):
         users = User.objects.filter(is_active=True).exclude(
             username__iexact=HIDDEN_SYSTEM_USERNAME
         ).select_related("employee_profile__department", "asset_manager_role")
+        enabled = set(
+            ModuleToggle.objects.filter(is_enabled=True)
+            .values_list("code", flat=True)
+        )
         return Response(
             {
                 "modules": [
                     {"value": value, "label": label}
                     for value, label in MANAGEMENT_MODULES
+                    if value in enabled
                 ],
                 "users": UserOptionSerializer(users, many=True).data,
             }
@@ -715,6 +726,45 @@ class ManagerSettingsView(APIView):
             "employee_profile__department", "asset_manager_role"
         ).get(pk=user.pk)
         return Response(UserOptionSerializer(user).data)
+
+
+class ModuleSettingsView(APIView):
+    permission_classes = [IsSuperAdministrator]
+
+    def get(self, request):
+        toggles = {
+            item.code: item
+            for item in ModuleToggle.objects.all()
+        }
+        return Response(
+            [
+                {
+                    "code": code,
+                    "label": label,
+                    "enabled": toggles[code].is_enabled if code in toggles else True,
+                }
+                for code, label in MANAGEMENT_MODULES
+                if code != "settings"
+            ]
+        )
+
+    def patch(self, request):
+        code = str(request.data.get("code") or "").strip()
+        enabled = request.data.get("enabled")
+        allowed = {value for value, _ in MANAGEMENT_MODULES} - {"settings"}
+        if code not in allowed or not isinstance(enabled, bool):
+            return Response({"message": "模块设置不正确。"}, status=400)
+        ModuleToggle.objects.update_or_create(
+            code=code,
+            defaults={"is_enabled": enabled},
+        )
+        return Response(
+            {
+                "code": code,
+                "label": dict(MANAGEMENT_MODULES)[code],
+                "enabled": enabled,
+            }
+        )
 
 
 class AssetRequestViewSet(viewsets.ModelViewSet):
