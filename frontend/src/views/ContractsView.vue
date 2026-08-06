@@ -6,7 +6,7 @@ import AppIcon from "../components/AppIcon.vue";
 import PersonSearchSelect from "../components/PersonSearchSelect.vue";
 import type { Contract, ContractAttachment, ContractType, ExpenseCategory, Lookups, Supplier } from "../types";
 
-const props = defineProps<{ lookups: Lookups | null }>();
+const props = defineProps<{ lookups: Lookups | null; isSuperuser: boolean }>();
 const rows = ref<Contract[]>([]);
 const suppliers = ref<Supplier[]>([]);
 const categories = ref<ExpenseCategory[]>([]);
@@ -192,6 +192,18 @@ async function saveChange() {
   }
 }
 
+async function deleteContract(item: Contract) {
+  const supplementCount = item.supplement_contracts.length;
+  const hint = supplementCount ? `该合同还有 ${supplementCount} 份附属补充协议合同，将一并删除。` : "";
+  if (!window.confirm(`确认删除合同“${item.name}（${item.contract_no}）”？${hint}删除后无法恢复。`)) return;
+  try {
+    await api(`/contracts/${item.id}/`, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    error.value = errorText(err, "合同删除失败。");
+  }
+}
+
 function openFiles(item: Contract) {
   selectedContract.value = item;
   documentType.value = "signed";
@@ -297,7 +309,7 @@ onMounted(load);
             <td data-label="金额与科目"><strong>{{ money(item.total_amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
             <td data-label="负责人"><strong>{{ item.owner_name || '未设置' }}</strong><small>{{ item.department_name || '未设置部门' }}</small></td>
             <td data-label="档案"><strong>{{ item.attachments.length }} 个文件</strong><small>{{ item.changes.length }} 次变更 · {{ item.auto_renew ? '约定续期' : '人工处理' }}</small></td>
-            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="openHistory(item)">历史</button><button v-if="!item.supplement_of && !item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!item.supplement_of && !['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button></td>
+            <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="openHistory(item)">历史</button><button v-if="!item.supplement_of && !item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!item.supplement_of && !['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button><button v-if="props.isSuperuser" class="contract-action-button danger" @click="deleteContract(item)">删除</button></td>
           </tr>
         </tbody>
       </table>

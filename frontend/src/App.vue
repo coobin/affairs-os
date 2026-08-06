@@ -194,7 +194,7 @@ onUnmounted(() => {
       <VehiclesView v-else-if="route.name === 'vehicles'" :lookups="lookups" :can-manage="hasScope('vehicles')" />
       <ProcurementView v-else-if="route.name === 'procurement'" :can-manage="hasScope('procurement')" />
       <ExpensesView v-else-if="route.name === 'expenses'" :lookups="lookups" />
-      <ContractsView v-else-if="route.name === 'contracts'" :lookups="lookups" />
+      <ContractsView v-else-if="route.name === 'contracts'" :lookups="lookups" :is-superuser="user.is_superuser" />
       <AssetsView
         v-else-if="route.name === 'assets'"
         :lookups="lookups"

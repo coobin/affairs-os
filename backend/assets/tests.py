@@ -2095,20 +2095,34 @@ class AdministrativePhaseTests(TestCase):
         self.assertEqual(failed.status_code, 400)
         self.assertIn("补充协议请登记在母合同上", failed.data["errors"]["change_type"][0])
 
-    def test_delete_contract_with_supplements_is_blocked(self):
+    def test_superuser_delete_contract_includes_supplements(self):
         self.client.force_authenticate(self.admin)
         parent = Contract.objects.create(
             contract_no="HT-SUP-DEL", name="删除保护合同", category=self.category,
             amount="10000.00", status=Contract.Status.ACTIVE,
         )
-        Contract.objects.create(
+        supplement = Contract.objects.create(
             contract_no="HT-SUP-DEL-S01", name="删除保护合同（补充协议 1）",
             category=self.category, amount="2000.00", supplement_of=parent,
             status=Contract.Status.ACTIVE,
         )
         deleted = self.client.delete(f"/api/v1/contracts/{parent.pk}/")
-        self.assertEqual(deleted.status_code, 400)
-        self.assertIn("请先删除全部补充协议合同", deleted.data["message"])
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(Contract.objects.filter(pk__in=[parent.pk, supplement.pk]).exists())
+
+    def test_non_superuser_cannot_delete_contract(self):
+        AssetManagerRole.objects.create(user=self.employee, scopes=["contracts"])
+        self.client.force_authenticate(self.employee)
+        contract = Contract.objects.create(
+            contract_no="HT-NODEL-001",
+            name="保留合同",
+            category=self.category,
+            amount="1000.00",
+            status=Contract.Status.ACTIVE,
+        )
+        deleted = self.client.delete(f"/api/v1/contracts/{contract.pk}/")
+        self.assertEqual(deleted.status_code, 405)
+        self.assertTrue(Contract.objects.filter(pk=contract.pk).exists())
 
     def test_superuser_can_delete_asset_with_history(self):
         self.client.force_authenticate(self.admin)

@@ -1698,11 +1698,13 @@ class ContractViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         contract = self.get_object()
-        if contract.supplement_contracts.exists():
-            return Response({"message": "该合同存在附属的补充协议合同，请先删除全部补充协议合同。"}, status=400)
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed("DELETE", detail="只有超级管理员可以删除合同。")
+        targets = [contract, *contract.supplement_contracts.all()]
         try:
-            for attachment in contract.attachments.all():
-                nextcloud_storage.delete(attachment.remote_path)
+            for item in targets:
+                for attachment in item.attachments.all():
+                    nextcloud_storage.delete(attachment.remote_path)
         except NextcloudStorageError as exc:
             return Response({"message": str(exc)}, status=503)
         contract.delete()
