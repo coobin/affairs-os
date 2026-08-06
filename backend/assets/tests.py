@@ -180,10 +180,10 @@ class AssetApiTests(TestCase):
         response = self.client.get("/api/v1/assets/")
         self.assertEqual(response.status_code, 403)
 
-    def test_asset_cannot_be_deleted(self):
+    def test_asset_can_be_deleted_by_superuser(self):
         response = self.client.delete(f"/api/v1/assets/{self.asset.pk}/")
-        self.assertEqual(response.status_code, 405)
-        self.assertTrue(Asset.objects.filter(pk=self.asset.pk).exists())
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Asset.objects.filter(pk=self.asset.pk).exists())
 
     def test_asset_configuration_can_be_saved(self):
         response = self.client.patch(
@@ -2109,6 +2109,118 @@ class AdministrativePhaseTests(TestCase):
         deleted = self.client.delete(f"/api/v1/contracts/{parent.pk}/")
         self.assertEqual(deleted.status_code, 400)
         self.assertIn("请先删除全部补充协议合同", deleted.data["message"])
+
+    def test_superuser_can_delete_asset_with_history(self):
+        self.client.force_authenticate(self.admin)
+        category = AssetCategory.objects.create(name="删除测试电脑", code="DEL-NB")
+        asset = Asset.objects.create(
+            asset_tag="IT-DEL-001",
+            category=category,
+            name="待删除资产",
+            status=Asset.Status.AVAILABLE,
+        )
+        AssetEvent.objects.create(
+            asset=asset,
+            action=AssetEvent.Action.CREATED,
+            from_status="",
+            to_status=Asset.Status.AVAILABLE,
+        )
+        deleted = self.client.delete(f"/api/v1/assets/{asset.pk}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(Asset.objects.filter(pk=asset.pk).exists())
+        self.assertFalse(AssetEvent.objects.filter(asset_id=asset.pk).exists())
+
+    def test_non_superuser_cannot_delete_asset(self):
+        AssetManagerRole.objects.create(user=self.employee, scopes=["assets"])
+        self.client.force_authenticate(self.employee)
+        category = AssetCategory.objects.create(name="保留测试电脑", code="NODEL-NB")
+        asset = Asset.objects.create(
+            asset_tag="IT-NODEL-001",
+            category=category,
+            name="保留资产",
+            status=Asset.Status.AVAILABLE,
+        )
+        deleted = self.client.delete(f"/api/v1/assets/{asset.pk}/")
+        self.assertEqual(deleted.status_code, 405)
+        self.assertTrue(Asset.objects.filter(pk=asset.pk).exists())
+
+    def test_superuser_delete_asset_blocked_when_referenced(self):
+        self.client.force_authenticate(self.admin)
+        category = AssetCategory.objects.create(name="引用测试电脑", code="REF-NB")
+        asset = Asset.objects.create(
+            asset_tag="IT-REF-001",
+            category=category,
+            name="被引用资产",
+            status=Asset.Status.AVAILABLE,
+        )
+        AssetRequest.objects.create(
+            requester=self.employee,
+            request_type=AssetRequest.RequestType.ASSIGN,
+            requested_item_type=AssetRequest.ItemType.ASSET,
+            requested_name="笔记本",
+            reason="测试",
+            status=AssetRequest.Status.FULFILLED,
+            assigned_asset=asset,
+        )
+        deleted = self.client.delete(f"/api/v1/assets/{asset.pk}/")
+        self.assertEqual(deleted.status_code, 400)
+        self.assertIn("无法删除", deleted.data["message"])
+        self.assertTrue(Asset.objects.filter(pk=asset.pk).exists())
+
+    def test_superuser_can_delete_unused_basic_data(self):
+        self.client.force_authenticate(self.admin)
+        location = Location.objects.create(name="临时库房", code="TMP-LOC")
+        deleted = self.client.delete(f"/api/v1/locations/{location.pk}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(Location.objects.filter(pk=location.pk).exists())
+
+    def test_non_superuser_cannot_delete_basic_data(self):
+        AssetManagerRole.objects.create(user=self.employee, scopes=["settings"])
+        self.client.force_authenticate(self.employee)
+        location = Location.objects.create(name="临时库房二", code="TMP-LOC2")
+        deleted = self.client.delete(f"/api/v1/locations/{location.pk}/")
+        self.assertEqual(deleted.status_code, 405)
+        self.assertTrue(Location.objects.filter(pk=location.pk).exists())
+
+    def test_superuser_delete_basic_data_blocked_when_referenced(self):
+        self.client.force_authenticate(self.admin)
+        category = ExpenseCategory.objects.create(
+            code="TMP-EXP",
+            name="临时费用类别",
+        )
+        Contract.objects.create(
+            contract_no="HT-REF-001",
+            name="引用合同",
+            category=category,
+        )
+        deleted = self.client.delete(f"/api/v1/expense-categories/{category.pk}/")
+        self.assertEqual(deleted.status_code, 400)
+        self.assertTrue(ExpenseCategory.objects.filter(pk=category.pk).exists())
+
+    def test_superuser_can_delete_inventory_item_without_transactions(self):
+        self.client.force_authenticate(self.admin)
+        item = InventoryItem.objects.create(
+            sku="DEL-001",
+            name="待删物品",
+            kind=InventoryItem.Kind.CONSUMABLE,
+            quantity=3,
+        )
+        deleted = self.client.delete(f"/api/v1/inventory/{item.pk}/")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(InventoryItem.objects.filter(pk=item.pk).exists())
+
+    def test_non_superuser_cannot_delete_inventory_item(self):
+        AssetManagerRole.objects.create(user=self.employee, scopes=["inventory"])
+        self.client.force_authenticate(self.employee)
+        item = InventoryItem.objects.create(
+            sku="NODEL-001",
+            name="保留物品",
+            kind=InventoryItem.Kind.CONSUMABLE,
+            quantity=3,
+        )
+        deleted = self.client.delete(f"/api/v1/inventory/{item.pk}/")
+        self.assertEqual(deleted.status_code, 405)
+        self.assertTrue(InventoryItem.objects.filter(pk=item.pk).exists())
 
     def test_contract_search_and_type_filter(self):
         self.client.force_authenticate(self.admin)

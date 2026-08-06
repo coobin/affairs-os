@@ -5,7 +5,7 @@ import AppIcon from "../components/AppIcon.vue";
 import PersonSearchSelect from "../components/PersonSearchSelect.vue";
 import type { InventoryItem, Lookups } from "../types";
 
-const props = defineProps<{ lookups: Lookups | null; canManage: boolean }>();
+const props = defineProps<{ lookups: Lookups | null; canManage: boolean; isSuperuser: boolean }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 const items = ref<InventoryItem[]>([]);
 const selected = ref<InventoryItem | null>(null);
@@ -40,6 +40,15 @@ async function transact() {
   } catch (err) { error.value = err instanceof ApiError ? err.message : "库存操作未完成。"; }
 }
 function openMovement(item: InventoryItem) { selected.value = item; error.value = ""; }
+async function deleteItem(item: InventoryItem) {
+  if (!window.confirm(`确认删除库存品“${item.name}（${item.sku}）”？删除后无法恢复。`)) return;
+  try {
+    await api(`/inventory/${item.id}/`, { method: "DELETE" });
+    await load();
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : "库存品删除失败。";
+  }
+}
 function formatTime(value: string) { return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
 function formatPrice(value: string | null) { return value === null ? "未设置单价" : `¥${Number(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 async function exportInventory() {
@@ -88,6 +97,7 @@ onMounted(load);
         <div class="stock-figure"><strong>{{ item.quantity }}</strong><span>{{ item.unit }}<small>保障数量 {{ item.minimum_quantity }}</small></span></div>
         <p class="inventory-price">{{ formatPrice(item.unit_price) }} · {{ item.purchase_channel_label || "未设置采购途径" }}</p>
         <button v-if="canManage" class="secondary-button full" @click="openMovement(item)">办理出入库</button>
+        <button v-if="isSuperuser" class="text-button danger" @click="deleteItem(item)">删除</button>
       </article>
       <div v-if="!items.length" class="empty-state large">还没有库存品。配件、耗材和软件许可从这里开始登记。</div>
     </section>

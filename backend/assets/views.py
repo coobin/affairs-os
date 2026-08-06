@@ -13,6 +13,7 @@ from django.core.cache import cache
 from django.http import FileResponse, HttpResponse, HttpResponseRedirect, StreamingHttpResponse
 import openpyxl
 from django.db import DatabaseError, transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Count, F, Max, Q, Sum
 from django.db.models.functions import ExtractMonth
 from django.utils import timezone
@@ -342,10 +343,26 @@ class AssetViewSet(viewsets.ModelViewSet):
         return queryset
 
     def destroy(self, request, *args, **kwargs):
-        raise MethodNotAllowed(
-            "DELETE",
-            detail="资产不能直接删除，请通过退役或处置保留完整历史。",
-        )
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed(
+                "DELETE",
+                detail="资产不能直接删除，请通过退役或处置保留完整历史。",
+            )
+        asset = self.get_object()
+        try:
+            for image in asset.images.all():
+                try:
+                    nextcloud_storage.delete(image.remote_path)
+                except NextcloudStorageError as exc:
+                    return Response({"message": str(exc)}, status=503)
+            asset.events.all().delete()
+            asset.delete()
+        except ProtectedError:
+            return Response(
+                {"message": "该资产已被领用申请等业务记录引用，无法删除。"},
+                status=400,
+            )
+        return Response(status=204)
 
     @action(detail=False, methods=["GET"])
     def export(self, request):
@@ -886,7 +903,17 @@ class NoDeleteViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def destroy(self, request, *args, **kwargs):
-        raise MethodNotAllowed("DELETE", detail="基础资料不能直接删除，请改为停用。")
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed("DELETE", detail="基础资料不能直接删除，请改为停用。")
+        obj = self.get_object()
+        try:
+            obj.delete()
+        except ProtectedError:
+            return Response(
+                {"message": "该基础资料仍被业务记录引用，无法删除，请先停用。"},
+                status=400,
+            )
+        return Response(status=204)
 
 
 class DepartmentViewSet(NoDeleteViewSet):
@@ -934,6 +961,22 @@ class InventoryItemViewSet(NoDeleteViewSet):
         if kind:
             queryset = queryset.filter(kind=kind)
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed(
+                "DELETE",
+                detail="库存物品不能直接删除，请通过出入库记录处理。",
+            )
+        item = self.get_object()
+        try:
+            item.delete()
+        except ProtectedError:
+            return Response(
+                {"message": "该库存物品已被出入库或申请记录引用，无法删除。"},
+                status=400,
+            )
+        return Response(status=204)
 
     @action(detail=False, methods=["get"])
     def export(self, request):

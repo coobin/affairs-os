@@ -51,6 +51,16 @@ async function toggle(row: Row) {
   await api(`/${tab.value}/${row.id}/`, { method: "PATCH", body: JSON.stringify({ is_active: !row.is_active }) });
   await load(tab.value);
 }
+async function remove(row: Row) {
+  if (tab.value === "managers" || row.is_system) return;
+  if (!window.confirm(`确认删除“${row.name}（${row.code}）”？删除后无法恢复。`)) return;
+  try {
+    await api(`/${tab.value}/${row.id}/`, { method: "DELETE" });
+    await load(tab.value);
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : "删除失败。";
+  }
+}
 async function select(next: Kind) {
   tab.value = next;
   error.value = "";
@@ -91,7 +101,7 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
     </section>
 
     <section v-else class="settings-layout">
-      <div class="settings-list"><header><p class="eyebrow">{{ labels[tab] }}</p><h2>现有项目</h2></header><div v-for="row in current" :key="row.id" class="setting-row" :class="{ inactive: !row.is_active }"><span class="setting-code">{{ row.code }}</span><div><strong>{{ row.name }}</strong><small>{{ tab === 'categories' ? `${row.class_type_label || 'IT资产'} · ${row.description || (row.is_active ? '正在使用' : '已停用')}` : row.description || row.address || (row.is_system ? "系统内置状态" : row.is_active ? "正在使用" : "已停用") }}</small></div><button class="text-button" :disabled="row.is_system" @click="toggle(row)">{{ row.is_system ? "内置" : row.is_active ? "停用" : "启用" }}</button></div><div v-if="!current.length" class="empty-state">还没有{{ labels[tab] }}。</div></div>
+      <div class="settings-list"><header><p class="eyebrow">{{ labels[tab] }}</p><h2>现有项目</h2></header><div v-for="row in current" :key="row.id" class="setting-row" :class="{ inactive: !row.is_active }"><span class="setting-code">{{ row.code }}</span><div><strong>{{ row.name }}</strong><small>{{ tab === 'categories' ? `${row.class_type_label || 'IT资产'} · ${row.description || (row.is_active ? '正在使用' : '已停用')}` : row.description || row.address || (row.is_system ? "系统内置状态" : row.is_active ? "正在使用" : "已停用") }}</small></div><button class="text-button" :disabled="row.is_system" @click="toggle(row)">{{ row.is_system ? "内置" : row.is_active ? "停用" : "启用" }}</button><button v-if="isSuperuser && !row.is_system" class="text-button danger" @click="remove(row)">删除</button></div><div v-if="!current.length" class="empty-state">还没有{{ labels[tab] }}。</div></div>
       <form class="settings-editor" @submit.prevent="create"><p class="eyebrow">新增{{ labels[tab] }}</p><h2>建立基础资料</h2><label><span>名称</span><input v-model="form.name" required /></label><label><span>编码</span><input v-model="form.code" required placeholder="使用简短英文或数字" /></label><label v-if="tab === 'categories'"><span>资产分类</span><select v-model="form.class_type"><option value="IT">IT资产</option><option value="ADMIN">行政资产</option></select></label><label v-if="tab === 'locations'"><span>地点类型</span><select v-model="form.kind"><option value="office">办公室</option><option value="warehouse">库房</option><option value="repair">维修点</option><option value="other">其他</option></select></label><label v-if="tab === 'locations'"><span>地址</span><input v-model="form.address" /></label><label v-if="tab === 'categories'"><span>说明</span><input v-model="form.description" /></label><p v-if="error" class="form-error">{{ error }}</p><button class="primary-button full">保存{{ labels[tab] }}</button></form>
     </section>
   </div>
