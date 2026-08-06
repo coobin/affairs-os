@@ -1672,7 +1672,10 @@ class EmailNotificationTests(TestCase):
 
         first = send_daily_operational_notifications()
         second = send_daily_operational_notifications()
-        self.assertEqual(first, {"overdue": 1, "low_stock": 0, "vehicle_due": 0, "contract_due": 0})
+        self.assertEqual(
+            first,
+            {"overdue": 1, "low_stock": 0, "vehicle_due": 0, "contract_due": 0, "user_inactive": 0},
+        )
         self.assertEqual(second, first)
         self.assertEqual(
             EmailNotification.objects.filter(event_type="loan_overdue").count(),
@@ -1769,6 +1772,50 @@ class EmailNotificationTests(TestCase):
     def test_creating_user_does_not_send_deactivation_email(self):
         User.objects.create_user("brand_new_user", password="pass", email="new@example.com")
         self.assertFalse(EmailNotification.objects.filter(event_type="user_deactivated").exists())
+
+    def test_daily_task_repeats_inactive_user_reminder_until_resolved(self):
+        self.asset.status = Asset.Status.ASSIGNED
+        self.asset.assigned_to = self.requester
+        self.asset.save()
+        self.requester.is_active = False
+        self.requester.save()
+
+        with patch(
+            "assets.tasks.timezone.localdate",
+            side_effect=[date(2026, 8, 7), date(2026, 8, 8)],
+        ):
+            first_day = send_daily_operational_notifications()
+            second_day = send_daily_operational_notifications()
+        self.assertEqual(first_day["user_inactive"], 1)
+        self.assertEqual(second_day["user_inactive"], 1)
+        notifications = EmailNotification.objects.filter(
+            event_type="user_deactivated",
+            recipient_email="manager@example.com",
+        ).order_by("created_at")
+        # 停用时即时提醒 1 封 + 每天 1 封（两天）
+        self.assertEqual(notifications.count(), 3)
+        self.assertIn("离职交接提醒：申请人（未完成）", notifications.last().subject)
+
+        # 名下资产处理后，每日任务不再提醒
+        self.asset.status = Asset.Status.AVAILABLE
+        self.asset.assigned_to = None
+        self.asset.save()
+        with patch("assets.tasks.timezone.localdate", return_value=date(2026, 8, 9)):
+            resolved = send_daily_operational_notifications()
+        self.assertEqual(resolved["user_inactive"], 0)
+        self.assertEqual(notifications.count(), 3)
+
+    def test_daily_task_skips_inactive_user_without_open_items(self):
+        self.requester.is_active = False
+        self.requester.save()
+        with patch("assets.tasks.timezone.localdate", return_value=date(2026, 8, 7)):
+            result = send_daily_operational_notifications()
+        self.assertEqual(result["user_inactive"], 0)
+        # 只有停用时的即时提醒，没有每日提醒
+        self.assertEqual(
+            EmailNotification.objects.filter(event_type="user_deactivated").count(),
+            1,
+        )
 
 
 @override_settings(EMAIL_NOTIFICATIONS_ENABLED=False)

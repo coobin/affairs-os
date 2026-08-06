@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from celery import shared_task
+from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import transaction
@@ -10,6 +11,10 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import Asset, Contract, EmailNotification, Vehicle
+from .permissions import HIDDEN_SYSTEM_USERNAME
+
+
+User = get_user_model()
 
 
 logger = logging.getLogger(__name__)
@@ -83,9 +88,23 @@ def send_daily_operational_notifications():
         end_date__lt=today,
     ).update(status=Contract.Status.EXPIRED, updated_at=timezone.now())
     if not settings.EMAIL_NOTIFICATIONS_ENABLED or not settings.EMAIL_HOST:
-        return {"overdue": 0, "low_stock": 0, "vehicle_due": 0, "contract_due": 0}
+        return {"overdue": 0, "low_stock": 0, "vehicle_due": 0, "contract_due": 0, "user_inactive": 0}
 
-    from .notifications import notification_manager_users, queue_email_notification
+    from .notifications import notification_manager_users, queue_email_notification, queue_user_inactive_reminder
+
+    inactive_users = User.objects.filter(is_active=False).exclude(
+        username__iexact=HIDDEN_SYSTEM_USERNAME,
+    )
+    user_inactive_count = 0
+    for user in inactive_users:
+        display_name = user.get_full_name() or user.username
+        if queue_user_inactive_reminder(
+            user,
+            event_key=f"daily-user-inactive:{today}:{user.pk}",
+            subject=f"离职交接提醒：{display_name}（未完成）",
+            require_open_items=True,
+        ):
+            user_inactive_count += 1
 
     due_assets = list(
         Asset.objects.filter(
@@ -215,4 +234,10 @@ def send_daily_operational_notifications():
             ),
         )
 
-    return {"overdue": len(overdue_assets), "low_stock": 0, "vehicle_due": len(vehicle_due), "contract_due": len(contract_due)}
+    return {
+        "overdue": len(overdue_assets),
+        "low_stock": 0,
+        "vehicle_due": len(vehicle_due),
+        "contract_due": len(contract_due),
+        "user_inactive": user_inactive_count,
+    }
