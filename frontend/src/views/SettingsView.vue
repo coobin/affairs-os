@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 
 import { api, ApiError } from "../api";
+import PersonSearchSelect from "../components/PersonSearchSelect.vue";
 import type { User } from "../types";
 
 const props = defineProps<{ isSuperuser: boolean }>();
@@ -14,17 +15,15 @@ const tab = ref<Kind>("categories");
 const rows = reactive<Record<BaseKind, Row[]>>({ categories: [], locations: [], departments: [], "asset-statuses": [], "expense-categories": [], "contract-types": [] });
 const managerUsers = ref<User[]>([]);
 const modules = ref<Module[]>([]);
-const managerSearch = ref("");
+const managerUserId = ref("");
 const error = ref("");
 const savedUser = ref<number | null>(null);
 const form = reactive({ name: "", code: "", kind: "office", address: "", description: "", class_type: "IT" });
 const labels: Record<Kind, string> = { categories: "资产类型", locations: "地点与库房", departments: "组织部门", "asset-statuses": "资产状态", "expense-categories": "费用类别", "contract-types": "合同类型", managers: "板块管理员" };
 const current = computed(() => tab.value === "managers" ? [] : rows[tab.value]);
-const filteredUsers = computed(() => {
-  const query = managerSearch.value.trim();
-  if (!query) return managerUsers.value;
-  return managerUsers.value.filter((user) => user.display_name.includes(query));
-});
+const selectedManager = computed(() =>
+  managerUsers.value.find((user) => String(user.id) === String(managerUserId.value)) || null,
+);
 
 async function load(kind: BaseKind) { rows[kind] = await api<Row[]>(`/${kind}/?page_size=500`); }
 async function loadManagers() {
@@ -91,12 +90,21 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
     </nav>
 
     <section v-if="tab === 'managers'" class="manager-settings">
-      <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2></div><input v-model="managerSearch" placeholder="输入中文姓名搜索" /></header>
-      <div class="manager-matrix-wrap">
-        <table class="manager-matrix">
-          <thead><tr><th>人员</th><th>部门</th><th v-for="item in modules" :key="item.value">{{ item.label }}</th><th>状态</th></tr></thead>
-          <tbody><tr v-for="person in filteredUsers" :key="person.id"><td><strong>{{ person.display_name }}</strong></td><td>{{ person.department_name || "未设置" }}</td><td v-for="item in modules" :key="item.value"><label class="scope-check"><input type="checkbox" :checked="person.management_scopes.includes(item.value)" :disabled="person.is_superuser" @change="toggleScope(person, item.value)" /><span></span></label></td><td><span v-if="savedUser === person.id" class="saved-mark">已保存</span><span v-else :class="person.management_scopes.length ? 'manager-on' : 'manager-off'">{{ person.is_superuser ? '超级管理员' : person.management_scopes.length ? '管理员' : '普通用户' }}</span></td></tr></tbody>
-        </table>
+      <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2><p>先搜索选择人员，再勾选其管理的板块。</p></div></header>
+      <div class="manager-editor">
+        <label class="manager-person-pick"><span>选择人员</span><PersonSearchSelect v-model="managerUserId" :users="managerUsers" placeholder="输入中文姓名搜索" /></label>
+        <div v-if="selectedManager" class="manager-scope-card">
+          <header><strong>{{ selectedManager.display_name }}</strong><small>{{ selectedManager.department_name || "未设置部门" }} · {{ selectedManager.employee_no || "无工号" }}</small><span v-if="selectedManager.is_superuser" class="manager-on">超级管理员</span></header>
+          <p v-if="selectedManager.is_superuser" class="manager-note">超级管理员默认拥有全部板块权限，无需勾选。</p>
+          <div v-else class="manager-module-grid">
+            <label v-for="item in modules" :key="item.value" class="scope-check">
+              <input type="checkbox" :checked="selectedManager.management_scopes.includes(item.value)" @change="toggleScope(selectedManager, item.value)" />
+              <span></span>{{ item.label }}
+            </label>
+          </div>
+          <p v-if="savedUser === selectedManager.id" class="saved-mark manager-saved">已保存</p>
+        </div>
+        <div v-else class="manager-empty">搜索并选择一名员工后，在这里配置其板块权限。</div>
       </div>
     </section>
 

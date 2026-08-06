@@ -2654,6 +2654,87 @@ label b {
   border-radius: 7px;
 }
 
+.manager-editor {
+  padding: 24px 28px 28px;
+}
+
+.manager-person-pick {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.manager-person-pick > span {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.manager-person-pick .person-search-select {
+  width: 100%;
+}
+
+.manager-scope-card {
+  margin-top: 22px;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafb;
+}
+
+.manager-scope-card > header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.manager-scope-card > header strong {
+  font-size: 1rem;
+}
+
+.manager-scope-card > header small {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.manager-scope-card > header .manager-on {
+  margin-left: auto;
+}
+
+.manager-module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px 20px;
+}
+
+.manager-module-grid .scope-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  height: auto;
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.manager-note,
+.manager-empty {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.manager-empty {
+  margin-top: 22px;
+  padding: 26px;
+  border: 1px dashed var(--line-dark);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.manager-saved {
+  margin-top: 14px;
+}
+
 .manager-matrix-wrap {
   overflow-x: auto;
 }
