@@ -1737,7 +1737,7 @@ class ContractViewSet(viewsets.ModelViewSet):
             return Response({"message": error}, status=400)
         document_type = request.data.get(
             "document_type",
-            ContractAttachment.DocumentType.ORIGINAL,
+            ContractAttachment.DocumentType.SIGNED,
         )
         if document_type not in dict(ContractAttachment.DocumentType.choices):
             return Response({"message": "请选择正确的合同文件类别。"}, status=400)

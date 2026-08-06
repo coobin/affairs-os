@@ -30,7 +30,7 @@ const changeContract = ref<Contract | null>(null);
 const changeError = ref("");
 const fileUploading = ref(false);
 const fileError = ref("");
-const documentType = ref("original");
+const documentType = ref("signed");
 const fileChange = ref("");
 
 const form = reactive({
@@ -194,7 +194,7 @@ async function saveChange() {
 
 function openFiles(item: Contract) {
   selectedContract.value = item;
-  documentType.value = "original";
+  documentType.value = "signed";
   fileChange.value = "";
   fileError.value = "";
 }
@@ -411,7 +411,7 @@ onMounted(load);
         <header><div><p class="eyebrow">合同文件 · {{ selectedContract.contract_no }}</p><h2>{{ selectedContract.name }}</h2></div><button type="button" class="icon-button" @click="selectedContract = null">×</button></header>
         <div class="contract-upload-desk contract-upload-versioned">
           <label><span>归档位置</span><select v-model="fileChange"><option value="">初始合同</option><option v-for="change in [...selectedContract.changes].reverse()" :key="change.id" :value="change.id">{{ change.changed_on }} · {{ change.change_type_label }}</option></select></label>
-          <label><span>文件类别</span><select v-model="documentType"><option value="original">合同原件</option><option value="signed">盖章扫描件</option><option value="supplement">补充协议</option><option value="quotation">报价单</option><option value="invoice">发票</option><option value="other">其他</option></select></label>
+          <label><span>文件类别</span><select v-model="documentType"><option value="signed">盖章扫描件</option><option value="invoice">发票</option><option value="other">其他</option></select></label>
           <label class="primary-button contract-file-picker"><AppIcon name="upload" :size="18" />{{ fileUploading ? '正在上传…' : '选择合同文件' }}<input type="file" multiple :disabled="fileUploading" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.zip,.rar,.7z,.ofd,.wps" @change="uploadFiles" /></label>
         </div>
         <p v-if="fileError" class="form-error file-vault-error">{{ fileError }}</p>

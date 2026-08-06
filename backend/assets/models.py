@@ -854,10 +854,7 @@ class ContractChange(TimeStampedModel):
 
 class ContractAttachment(RemoteFileBase):
     class DocumentType(models.TextChoices):
-        ORIGINAL = "original", "合同原件"
         SIGNED = "signed", "盖章扫描件"
-        SUPPLEMENT = "supplement", "补充协议"
-        QUOTATION = "quotation", "报价单"
         INVOICE = "invoice", "发票"
         OTHER = "other", "其他"
 
@@ -879,7 +876,7 @@ class ContractAttachment(RemoteFileBase):
         "文件类别",
         max_length=20,
         choices=DocumentType.choices,
-        default=DocumentType.ORIGINAL,
+        default=DocumentType.SIGNED,
     )
 
     class Meta:
