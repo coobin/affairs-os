@@ -38,6 +38,7 @@ const actionForm = reactive({
 const actionDefinitions: Record<string, { label: string; description: string }> = {
   assign: { label: "办理领用", description: "将资产长期分配给一名员工。" },
   loan: { label: "临时借用", description: "借出资产并设置预计归还日期。" },
+  extend: { label: "办理延期", description: "延长借用资产的预计归还日期。" },
   return: { label: "办理归还", description: "收回资产并恢复为在库状态。" },
   transfer: { label: "调拨地点", description: "改变资产当前存放地点并留下记录。" },
   dispose: { label: "标记报废", description: "将资产设为报废并保留历史记录。" },
@@ -48,7 +49,7 @@ const availableActions = computed(() => {
   const rules: Record<string, string[]> = {
     available: ["assign", "loan", "transfer", "dispose"],
     assigned: ["return", "transfer", "dispose"],
-    loaned: ["return", "transfer", "dispose"],
+    loaned: ["extend", "return", "transfer", "dispose"],
     disposed: [],
   };
   return rules[asset.value.status] || ["transfer", "dispose"];
@@ -376,8 +377,8 @@ onBeforeUnmount(clearImagePreviews);
               </option>
             </select>
           </label>
-          <label v-if="actionType === 'loan'">
-            <span>预计归还日期 <b>*</b></span>
+          <label v-if="['loan', 'extend'].includes(actionType)">
+            <span>{{ actionType === 'extend' ? '新的预计归还日期' : '预计归还日期' }} <b>*</b></span>
             <input v-model="actionForm.expected_return_at" type="date" required />
           </label>
           <label>

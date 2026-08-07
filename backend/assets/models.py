@@ -625,6 +625,7 @@ class AssetEvent(models.Model):
         ACCEPTED = "accepted", "验收入库"
         ASSIGNED = "assigned", "领用"
         LOANED = "loaned", "借用"
+        EXTENDED = "extended", "延期"
         RETURNED = "returned", "归还"
         TRANSFERRED = "transferred", "调拨"
         REPAIR_STARTED = "repair_started", "送修"

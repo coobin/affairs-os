@@ -125,6 +125,13 @@ def perform_asset_action(
             raise ValidationError({"target_location_id": "调拨时必须选择目标地点。"})
         event_action = AssetEvent.Action.TRANSFERRED
         next_status = locked.status
+    elif action == "extend":
+        if locked.status != Asset.Status.LOANED:
+            raise ValidationError({"action": "只有借用中的资产可以办理延期。"})
+        if expected_return_at is None:
+            raise ValidationError({"expected_return_at": "延期必须填写新的预计归还日期。"})
+        event_action = AssetEvent.Action.EXTENDED
+        next_status = locked.status
     else:
         rule = ACTION_RULES.get(action)
         if rule is None:
@@ -158,6 +165,8 @@ def perform_asset_action(
         profile = getattr(target_user, "employee_profile", None)
         if profile and profile.department:
             locked.custodian_department = profile.department
+    elif action == "extend":
+        locked.expected_return_at = expected_return_at
     elif action in {"return", "dispose"}:
         locked.assigned_to = None
         locked.expected_return_at = None

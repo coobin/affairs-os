@@ -673,6 +673,7 @@ class AssetActionSerializer(serializers.Serializer):
             "accept",
             "assign",
             "loan",
+            "extend",
             "return",
             "transfer",
             "dispose",

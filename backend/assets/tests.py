@@ -185,6 +185,60 @@ class AssetApiTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Asset.objects.filter(pk=self.asset.pk).exists())
 
+    def test_loan_can_be_extended(self):
+        self.client.force_authenticate(self.admin)
+        loaned = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/actions/",
+            {
+                "action": "loan",
+                "target_user_id": self.employee.pk,
+                "expected_return_at": "2026-08-10",
+            },
+            format="json",
+        )
+        self.assertEqual(loaned.status_code, 200)
+        extended = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/actions/",
+            {
+                "action": "extend",
+                "expected_return_at": "2026-09-10",
+                "notes": "项目延期",
+            },
+            format="json",
+        )
+        self.assertEqual(extended.status_code, 200)
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.status, Asset.Status.LOANED)
+        self.assertEqual(self.asset.expected_return_at, date(2026, 9, 10))
+        event = AssetEvent.objects.filter(
+            asset=self.asset,
+            action=AssetEvent.Action.EXTENDED,
+        ).latest("id")
+        self.assertEqual(event.to_status, Asset.Status.LOANED)
+
+    def test_extend_requires_loaned_asset(self):
+        self.client.force_authenticate(self.admin)
+        blocked = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/actions/",
+            {"action": "extend", "expected_return_at": "2026-09-10"},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("只有借用中的资产", json.dumps(blocked.data, ensure_ascii=False))
+
+    def test_extend_requires_return_date(self):
+        self.client.force_authenticate(self.admin)
+        self.asset.status = Asset.Status.LOANED
+        self.asset.assigned_to = self.employee
+        self.asset.save()
+        blocked = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/actions/",
+            {"action": "extend"},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("延期必须填写新的预计归还日期", json.dumps(blocked.data, ensure_ascii=False))
+
     def test_asset_configuration_can_be_saved(self):
         response = self.client.patch(
             f"/api/v1/assets/{self.asset.pk}/",
