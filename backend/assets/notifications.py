@@ -208,8 +208,7 @@ def notify_asset_action(event: AssetEvent):
                     f"{borrower.get_full_name() or borrower.username}，你借用的资产已办理延期。\n\n"
                     f"资产：{asset.asset_tag} · {asset.name}\n"
                     f"原预计归还：{from_date}\n"
-                    f"新的预计归还：{to_date or '未设置'}\n\n"
-                    "请按新的日期归还，如需继续使用可再次办理延期。"
+                    f"新的预计归还：{to_date or '未设置'}"
                 ),
             )
     return []
