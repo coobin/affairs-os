@@ -188,7 +188,30 @@ def notify_request_cancelled(asset_request: AssetRequest):
 
 
 def notify_asset_action(event: AssetEvent):
-    # 资产领用、借用、归还等办理动作不向普通用户发送邮件。
+    # 资产领用、借用、归还等办理动作不向普通用户发送邮件；
+    # 借用延期时向借用人发送确认邮件。
+    if event.action == AssetEvent.Action.EXTENDED:
+        asset = event.asset
+        borrower = asset.assigned_to
+        if borrower and borrower.email:
+            metadata = event.metadata or {}
+            from_date = metadata.get("from_return_at") or "未设置"
+            to_date = metadata.get("to_return_at")
+            if not to_date and asset.expected_return_at:
+                to_date = asset.expected_return_at.isoformat()
+            return queue_email_notification(
+                event_key=f"loan-extended:{event.pk}",
+                event_type="loan_extended",
+                recipients=[borrower],
+                subject=f"借用延期提醒：{asset.asset_tag} · {asset.name}",
+                body=(
+                    f"{borrower.get_full_name() or borrower.username}，你借用的资产已办理延期。\n\n"
+                    f"资产：{asset.asset_tag} · {asset.name}\n"
+                    f"原预计归还：{from_date}\n"
+                    f"新的预计归还：{to_date or '未设置'}\n\n"
+                    "请按新的日期归还，如需继续使用可再次办理延期。"
+                ),
+            )
     return []
 
 

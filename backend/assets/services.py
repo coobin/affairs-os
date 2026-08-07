@@ -158,6 +158,7 @@ def perform_asset_action(
     before_status = locked.status
     before_user = locked.assigned_to
     before_location = locked.current_location
+    before_expected_return = locked.expected_return_at
 
     if action in {"assign", "loan"}:
         locked.assigned_to = target_user
@@ -179,6 +180,14 @@ def perform_asset_action(
     locked.status = next_status
     locked.save()
 
+    event_metadata = {}
+    if action == "return":
+        event_metadata = {"requires_inspection": requires_inspection}
+    elif action == "extend":
+        event_metadata = {
+            "from_return_at": before_expected_return.isoformat() if before_expected_return else None,
+            "to_return_at": expected_return_at.isoformat() if expected_return_at else None,
+        }
     event = AssetEvent.objects.create(
         asset=locked,
         action=event_action,
@@ -190,7 +199,7 @@ def perform_asset_action(
         to_location=locked.current_location,
         actor=actor,
         notes=notes,
-        metadata={"requires_inspection": requires_inspection} if action == "return" else {},
+        metadata=event_metadata,
     )
     if send_notification:
         from .notifications import notify_asset_action

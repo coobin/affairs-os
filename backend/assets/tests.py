@@ -1871,6 +1871,27 @@ class EmailNotificationTests(TestCase):
             1,
         )
 
+    def test_loan_extend_sends_email_to_borrower(self):
+        self.asset.status = Asset.Status.LOANED
+        self.asset.assigned_to = self.requester
+        self.asset.expected_return_at = date.today() + timedelta(days=7)
+        self.asset.save()
+
+        result = perform_asset_action(
+            asset=self.asset,
+            action="extend",
+            actor=self.manager,
+            expected_return_at=date.today() + timedelta(days=21),
+        )
+        self.assertEqual(result.event.action, AssetEvent.Action.EXTENDED)
+        notification = EmailNotification.objects.get(
+            event_type="loan_extended",
+            recipient_email="requester@example.com",
+        )
+        self.assertIn("借用延期提醒", notification.subject)
+        self.assertIn(str(date.today() + timedelta(days=21)), notification.body)
+        self.assertIn(str(date.today() + timedelta(days=7)), notification.body)
+
 
 @override_settings(EMAIL_NOTIFICATIONS_ENABLED=False)
 class AdministrativePhaseTests(TestCase):
