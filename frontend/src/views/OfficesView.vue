@@ -647,6 +647,7 @@ onMounted(load);
 .resident-option-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 220px; overflow: auto; padding: 2px; }
 .resident-option { display: flex !important; min-width: 0; flex-direction: row !important; align-items: flex-start; gap: 8px !important; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfc; }
 .resident-option:has(input:checked) { border-color: var(--blue); background: rgba(25, 95, 164, 0.06); }
+.resident-option > input { width: 17px !important; min-width: 17px; min-height: 17px !important; flex: 0 0 17px; margin: 2px 0 0; padding: 0 !important; }
 .resident-option > span { display: grid; min-width: 0; gap: 3px; }
 .resident-option strong, .resident-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resident-option small { color: var(--ink-soft); font-size: 10px; }
