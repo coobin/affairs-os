@@ -98,7 +98,7 @@ onMounted(async () => {
             <strong class="task-count">{{ data.tasks.warranty_due }}</strong>
             <AppIcon name="chevron-right" :size="18" />
           </button>
-          <button class="task-row" @click="emit('navigate', '/assets?status=loaned')">
+          <button class="task-row" @click="emit('navigate', '/assets?status=loaned&overdue=1')">
             <span class="task-index">02</span>
             <span class="task-copy"><strong>借用已经超期</strong><small>需要联系借用人归还</small></span>
             <strong class="task-count hot">{{ data.tasks.overdue_loans }}</strong>

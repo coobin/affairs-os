@@ -22,7 +22,7 @@ import RequestsView from "./views/RequestsView.vue";
 import SettingsView from "./views/SettingsView.vue";
 
 const user = ref<User | null>(getStoredUser());
-const path = ref(window.location.pathname);
+const path = ref(`${window.location.pathname}${window.location.search}`);
 const lookups = ref<Lookups | null>(null);
 const authLoading = ref(false);
 const authError = ref("");
@@ -48,22 +48,23 @@ const navItems = computed(() => [
 ]);
 
 const route = computed<{ name: string; id?: number; section?: string }>(() => {
-  if (path.value === "/requests") return { name: "requests" };
-  if (path.value === "/vehicles") return { name: "vehicles" };
-  if (path.value === "/procurement") return { name: "procurement" };
-  if (path.value === "/expenses" && hasScope("expenses")) return { name: "expenses" };
-  if (path.value === "/contracts" && hasScope("contracts")) return { name: "contracts" };
-  if (path.value === "/" && user.value?.management_scopes?.length) return { name: "dashboard" };
-  if (path.value === "/assets" && hasScope("assets")) return { name: "assets" };
-  if (path.value === "/assets/new" && hasScope("assets")) return { name: "asset-new" };
-  if (path.value === "/assets/import" && hasScope("assets")) return { name: "asset-import" };
-  if (path.value === "/inventory" && hasScope("inventory")) return { name: "inventory" };
-  if (path.value === "/inventory/import" && hasScope("inventory")) return { name: "inventory-import" };
-  if (path.value === "/reports" && hasScope("reports")) return { name: "reports" };
-  if (path.value === "/settings" && hasScope("settings")) return { name: "settings" };
-  const editMatch = path.value.match(/^\/assets\/(\d+)\/edit$/);
+  const currentPath = path.value.split("?")[0];
+  if (currentPath === "/requests") return { name: "requests" };
+  if (currentPath === "/vehicles") return { name: "vehicles" };
+  if (currentPath === "/procurement") return { name: "procurement" };
+  if (currentPath === "/expenses" && hasScope("expenses")) return { name: "expenses" };
+  if (currentPath === "/contracts" && hasScope("contracts")) return { name: "contracts" };
+  if (currentPath === "/" && user.value?.management_scopes?.length) return { name: "dashboard" };
+  if (currentPath === "/assets" && hasScope("assets")) return { name: "assets" };
+  if (currentPath === "/assets/new" && hasScope("assets")) return { name: "asset-new" };
+  if (currentPath === "/assets/import" && hasScope("assets")) return { name: "asset-import" };
+  if (currentPath === "/inventory" && hasScope("inventory")) return { name: "inventory" };
+  if (currentPath === "/inventory/import" && hasScope("inventory")) return { name: "inventory-import" };
+  if (currentPath === "/reports" && hasScope("reports")) return { name: "reports" };
+  if (currentPath === "/settings" && hasScope("settings")) return { name: "settings" };
+  const editMatch = currentPath.match(/^\/assets\/(\d+)\/edit$/);
   if (editMatch && hasScope("assets")) return { name: "asset-edit", id: Number(editMatch[1]) };
-  const match = path.value.match(/^\/assets\/(\d+)$/);
+  const match = currentPath.match(/^\/assets\/(\d+)$/);
   if (match && hasScope("assets")) return { name: "asset-detail", id: Number(match[1]) };
   return { name: "requests" };
 });
@@ -77,10 +78,11 @@ function navigate(to: string) {
 }
 
 function onPopState() {
+  const currentLocation = `${window.location.pathname}${window.location.search}`;
   const destination = window.location.pathname === "/stocktake"
     ? homePath.value
-    : window.location.pathname;
-  if (destination !== window.location.pathname) {
+    : currentLocation;
+  if (destination !== currentLocation) {
     window.history.replaceState({}, "", destination);
   }
   path.value = destination;
@@ -199,6 +201,7 @@ onUnmounted(() => {
       <ContractsView v-else-if="route.name === 'contracts'" :lookups="lookups" :is-superuser="user.is_superuser" />
       <AssetsView
         v-else-if="route.name === 'assets'"
+        :key="path"
         :lookups="lookups"
         :can-manage="hasScope('assets')"
         @navigate="navigate"

@@ -145,6 +145,31 @@ class AssetApiTests(TestCase):
         self.assertEqual(response.data["summary"]["total"], 1)
         self.assertEqual(response.data["tasks"]["warranty_due"], 1)
 
+    def test_overdue_dashboard_count_matches_overdue_asset_list(self):
+        overdue = Asset.objects.create(
+            asset_tag="IT-MN-OVERDUE-001",
+            category=self.category,
+            status=Asset.Status.LOANED,
+            assigned_to=self.employee,
+            expected_return_at=timezone.localdate() - timedelta(days=1),
+        )
+        Asset.objects.create(
+            asset_tag="IT-MN-FUTURE-001",
+            category=self.category,
+            status=Asset.Status.LOANED,
+            assigned_to=self.employee,
+            expected_return_at=timezone.localdate() + timedelta(days=1),
+        )
+
+        dashboard = self.client.get("/api/v1/dashboard/")
+        asset_list = self.client.get("/api/v1/assets/?status=loaned&overdue=1")
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.data["tasks"]["overdue_loans"], 1)
+        self.assertEqual(asset_list.status_code, 200)
+        self.assertEqual(asset_list.data["count"], 1)
+        self.assertEqual(asset_list.data["results"][0]["id"], overdue.id)
+
     def test_action_endpoint_assigns_asset(self):
         department = Department.objects.create(name="研发部", code="RND")
         EmployeeProfile.objects.create(user=self.employee, employee_no="E001", department=department)

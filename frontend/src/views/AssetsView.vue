@@ -15,6 +15,7 @@ type AssetListState = {
   classType?: string;
   category?: string;
   location?: string;
+  overdue?: boolean;
   page?: number;
 };
 
@@ -36,6 +37,7 @@ const status = ref(urlParams.get("status") ?? savedState.status ?? "");
 const classType = ref(savedState.classType ?? "");
 const category = ref(savedState.category ?? "");
 const location = ref(savedState.location ?? "");
+const overdue = ref(urlParams.get("overdue") === "1" || (!window.location.search && savedState.overdue === true));
 const page = ref(Number.isInteger(savedState.page) && Number(savedState.page) > 0 ? Number(savedState.page) : 1);
 const savedPageSize = Number(window.localStorage.getItem("asset-page-size"));
 const pageSize = ref([20, 50, 100].includes(savedPageSize) ? savedPageSize : 20);
@@ -44,7 +46,7 @@ const firstVisible = computed(() => (page.value - 1) * pageSize.value + 1);
 const lastVisible = computed(() => Math.min(page.value * pageSize.value, total.value));
 let debounceTimer = 0;
 
-const hasFilters = computed(() => query.value || status.value || classType.value || category.value || location.value);
+const hasFilters = computed(() => query.value || status.value || classType.value || category.value || location.value || overdue.value);
 
 function saveListState() {
   window.sessionStorage.setItem(LIST_STATE_KEY, JSON.stringify({
@@ -53,6 +55,7 @@ function saveListState() {
     classType: classType.value,
     category: String(category.value || ""),
     location: String(location.value || ""),
+    overdue: overdue.value,
     page: page.value,
   } satisfies AssetListState));
 }
@@ -66,6 +69,7 @@ async function loadAssets() {
   if (classType.value) params.set("class_type", classType.value);
   if (category.value) params.set("category", category.value);
   if (location.value) params.set("location", location.value);
+  if (overdue.value) params.set("overdue", "1");
   if (page.value > 1) params.set("page", page.value.toString());
   params.set("page_size", pageSize.value.toString());
   try {
@@ -86,6 +90,7 @@ function clearFilters() {
   classType.value = "";
   category.value = "";
   location.value = "";
+  overdue.value = false;
 }
 
 function formatDate(value: string | null) {
@@ -112,6 +117,7 @@ async function exportAssets() {
   if (classType.value) params.set("class_type", classType.value);
   if (category.value) params.set("category", category.value);
   if (location.value) params.set("location", location.value);
+  if (overdue.value) params.set("overdue", "1");
 
   try {
     await download(`/assets/export/?${params}`);
@@ -120,7 +126,13 @@ async function exportAssets() {
   }
 }
 
-watch([status, classType, category, location], resetAndLoad);
+watch([status, classType, category, location, overdue], () => {
+  if (overdue.value && status.value !== "loaned") {
+    overdue.value = false;
+    return;
+  }
+  resetAndLoad();
+});
 watch(pageSize, () => {
   window.localStorage.setItem("asset-page-size", String(pageSize.value));
   resetAndLoad();
@@ -187,6 +199,7 @@ onMounted(loadAssets);
           {{ item.name }}
         </option>
       </select>
+      <button v-if="overdue" class="text-button" @click="overdue = false">仅显示借用已超期 ×</button>
       <button v-if="hasFilters" class="text-button" @click="clearFilters">清除筛选</button>
     </section>
 

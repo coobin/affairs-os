@@ -341,6 +341,12 @@ class AssetViewSet(viewsets.ModelViewSet):
         class_type = self.request.query_params.get("class_type", "").strip().upper()
         if class_type in dict(AssetCategory.ClassType.choices):
             queryset = queryset.filter(category__class_type=class_type)
+        overdue = self.request.query_params.get("overdue", "").strip().lower()
+        if overdue in {"1", "true", "yes"}:
+            queryset = queryset.filter(
+                status=Asset.Status.LOANED,
+                expected_return_at__lt=timezone.localdate(),
+            )
         return queryset
 
     def destroy(self, request, *args, **kwargs):
@@ -589,7 +595,7 @@ class DashboardView(APIView):
             row["status"]: row["total"]
             for row in queryset.values("status").annotate(total=Count("id"))
         }
-        today = date.today()
+        today = timezone.localdate()
         warranty_due = queryset.filter(
             warranty_expires_at__gte=today,
             warranty_expires_at__lte=today + timedelta(days=90),
