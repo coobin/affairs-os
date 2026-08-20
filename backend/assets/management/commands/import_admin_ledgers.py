@@ -205,6 +205,9 @@ class Command(BaseCommand):
             return fallback
         candidates = []
         for user in self.users:
+            scopes = getattr(getattr(user, "asset_manager_role", None), "scopes", []) or []
+            if not user.is_superuser and "contracts" not in scopes:
+                continue
             for label in (user.get_full_name(), f"{user.last_name}{user.first_name}", user.username):
                 alias = normalize_name(label)
                 if alias and len(alias) >= 2 and alias in contact:
