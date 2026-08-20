@@ -76,7 +76,7 @@ onMounted(async () => {
               <span><i class="signal available"></i>在库</span>
               <strong>{{ data.summary.available }}</strong>
             </button>
-            <button @click="emit('navigate', '/assets')">
+            <button @click="emit('navigate', '/assets?status=disposed')">
               <span><i class="signal attention"></i>需要关注</span>
               <strong>{{ data.summary.attention }}</strong>
             </button>
@@ -104,7 +104,7 @@ onMounted(async () => {
             <strong class="task-count hot">{{ data.tasks.overdue_loans }}</strong>
             <AppIcon name="chevron-right" :size="18" />
           </button>
-          <button class="task-row" @click="emit('navigate', '/assets')">
+          <button class="task-row" @click="emit('navigate', '/assets?status=disposed')">
             <span class="task-index">03</span>
             <span class="task-copy"><strong>已报废资产</strong><small>保留历史记录，不再参与领用</small></span>
             <strong class="task-count">{{ data.tasks.attention }}</strong>
