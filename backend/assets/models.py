@@ -958,7 +958,14 @@ class Office(TimeStampedModel):
     responsible_name = models.CharField("现场负责人", max_length=80, blank=True)
     responsible_phone = models.CharField("负责人联系电话", max_length=80, blank=True)
     residents = models.TextField("居住人员", blank=True)
-    resident_count = models.PositiveSmallIntegerField("居住人数", null=True, blank=True)
+    resident_users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        verbose_name="居住员工",
+        blank=True,
+        related_name="residential_offices",
+    )
+    resident_capacity = models.PositiveSmallIntegerField("可住人数", null=True, blank=True)
+    resident_count = models.PositiveSmallIntegerField("实际居住人数", null=True, blank=True)
     renewal_status = models.TextField("续租情况", blank=True)
     lease_summary = models.TextField("历次租赁期限", blank=True)
     current_lease_period = models.CharField("本期租赁期限", max_length=160, blank=True)

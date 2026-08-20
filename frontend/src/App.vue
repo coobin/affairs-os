@@ -206,7 +206,7 @@ onUnmounted(() => {
       <ExpensesView v-else-if="route.name === 'expenses'" :lookups="lookups" />
       <ContractsView v-else-if="route.name === 'contracts'" :lookups="lookups" :is-superuser="user.is_superuser" />
       <SuppliersView v-else-if="route.name === 'suppliers'" :is-superuser="user.is_superuser" />
-      <OfficesView v-else-if="route.name === 'offices'" :is-superuser="user.is_superuser" />
+      <OfficesView v-else-if="route.name === 'offices'" :lookups="lookups" :is-superuser="user.is_superuser" />
       <AssetsView
         v-else-if="route.name === 'assets'"
         :key="path"

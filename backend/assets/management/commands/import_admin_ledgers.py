@@ -215,6 +215,23 @@ class Command(BaseCommand):
                     candidates.append((len(alias), user))
         return max(candidates, key=lambda item: item[0])[1] if candidates else fallback
 
+    def _find_resident_users(self, resident_names):
+        matches = []
+        for token in resident_names:
+            normalized = normalize_name(token)
+            if not normalized:
+                continue
+            for user in self.users:
+                profile = getattr(user, "employee_profile", None)
+                if not profile:
+                    continue
+                aliases = (user.get_full_name(), user.username, profile.employee_no)
+                if any(normalized == normalize_name(alias) for alias in aliases if alias):
+                    if user not in matches:
+                        matches.append(user)
+                    break
+        return matches
+
     def _collect_suppliers(self, workbook):
         records = {}
 
@@ -538,11 +555,13 @@ class Command(BaseCommand):
             elif period_end and source_end and period_end != source_end:
                 notes.append(f"最近租赁期文本截止 {period_end}，终止日期列为 {source_end}，均保留待核对。")
             residents = meaningful(ws.cell(row, 41).value)
-            resident_count = ws.cell(row, 40).value
-            resident_count = int(resident_count) if isinstance(resident_count, (int, float)) else None
             resident_names = [item for item in re.split(r"[、,，;；\s]+", residents) if item]
-            if resident_count is not None and residents and "流动" not in residents and len(resident_names) != resident_count:
-                notes.append(f"源表居住人数为 {resident_count}，名单识别为 {len(resident_names)} 人，原值均保留。")
+            resident_capacity = ws.cell(row, 40).value
+            resident_capacity = int(resident_capacity) if isinstance(resident_capacity, (int, float)) else None
+            resident_count = None if not resident_names or "流动" in residents else len(resident_names)
+            resident_users = self._find_resident_users(resident_names)
+            if resident_capacity is not None and resident_count is not None and resident_count != resident_capacity:
+                notes.append(f"源表可住人数为 {resident_capacity}，名单识别的实际居住人数为 {resident_count}，原值均保留。")
             latest_amount = pure_decimal(ws.cell(row, 29).value)
             if latest_amount is None and meaningful(ws.cell(row, 29).value):
                 notes.append(f"近期付款金额原文：{meaningful(ws.cell(row, 29).value)}")
@@ -583,6 +602,7 @@ class Command(BaseCommand):
                 "responsible_name": meaningful(ws.cell(row, 30).value)[:80],
                 "responsible_phone": meaningful(ws.cell(row, 31).value)[:80],
                 "residents": residents,
+                "resident_capacity": resident_capacity,
                 "resident_count": resident_count,
                 "renewal_status": renewal,
                 "lease_summary": meaningful(ws.cell(row, 34).value),
@@ -600,6 +620,7 @@ class Command(BaseCommand):
             else:
                 office = Office.objects.create(**defaults)
                 self._record("offices", "created")
+            office.resident_users.set(resident_users)
 
             contract_external_id = f"admin-ledger:office-contract:{sequence}"
             contract_end = lease_end

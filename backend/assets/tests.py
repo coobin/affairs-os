@@ -2943,6 +2943,34 @@ class AdministrativePhaseTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item["id"] for item in response.data["contracts"]], [own.id])
 
+    def test_office_residents_link_to_employees_and_warn_on_multiple_places(self):
+        self.employee.first_name = "张三"
+        self.employee.last_name = ""
+        self.employee.save(update_fields=["first_name", "last_name"])
+        self.client.force_authenticate(self.admin)
+        first = self.client.post(
+            "/api/v1/offices/",
+            {
+                "code": "OFFICE-RES-01", "name": "宁波一号住宿点", "city": "宁波",
+                "address": "江北区测试路1号", "resident_users": [self.employee.id],
+                "resident_capacity": 3, "resident_count": 1,
+            }, format="json",
+        )
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post(
+            "/api/v1/offices/",
+            {
+                "code": "OFFICE-RES-02", "name": "宁波二号住宿点", "city": "宁波",
+                "address": "鄞州区测试路2号", "resident_users": [self.employee.id],
+                "resident_capacity": 2, "resident_count": 1,
+            }, format="json",
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.data["resident_user_details"][0]["display_name"], "张三")
+        self.assertEqual(second.data["resident_capacity"], 2)
+        self.assertEqual(second.data["resident_count"], 1)
+        self.assertIn("张三 还居住在：宁波·宁波一号住宿点", second.data["resident_warnings"])
+
     def test_daily_task_marks_unhandled_contract_expired_without_email(self):
         contract = Contract.objects.create(
             contract_no="HT-EXPIRED-001", name="已过期合同",

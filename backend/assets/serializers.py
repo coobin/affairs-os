@@ -40,7 +40,7 @@ from .models import (
     VehicleDispatch,
     VehicleExpense,
 )
-from .permissions import is_hidden_superuser, management_scopes
+from .permissions import HIDDEN_SYSTEM_USERNAME, is_hidden_superuser, management_scopes
 from .services import align_asset_tag, generate_asset_tag, perform_asset_action
 
 User = get_user_model()
@@ -794,6 +794,18 @@ class SupplierSerializer(serializers.ModelSerializer):
 class OfficeSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     contracts = serializers.SerializerMethodField()
+    resident_users = serializers.PrimaryKeyRelatedField(
+        many=True,
+        required=False,
+        queryset=User.objects.filter(
+            is_active=True,
+            employee_profile__isnull=False,
+        ).exclude(username__iexact=HIDDEN_SYSTEM_USERNAME),
+    )
+    resident_user_details = UserOptionSerializer(
+        source="resident_users", many=True, read_only=True
+    )
+    resident_warnings = serializers.SerializerMethodField()
 
     class Meta:
         model = Office
@@ -806,10 +818,29 @@ class OfficeSerializer(serializers.ModelSerializer):
             "payment_method", "payment_terms", "latest_payment_period", "paid_period_start",
             "paid_period_end", "latest_payment_date", "next_payment_date",
             "latest_payment_amount", "responsible_name", "responsible_phone", "residents",
-            "resident_count", "renewal_status", "lease_summary", "current_lease_period",
+            "resident_users", "resident_user_details", "resident_warnings",
+            "resident_capacity", "resident_count", "renewal_status", "lease_summary", "current_lease_period",
             "lease_start", "lease_end", "expected_move_out_date", "feedback", "notes",
             "external_id", "contracts", "created_at", "updated_at",
         )
+
+    def get_resident_warnings(self, obj):
+        warnings = []
+        for user in obj.resident_users.all():
+            other_offices = Office.objects.filter(
+                resident_users=user,
+            ).exclude(pk=obj.pk).exclude(
+                status__in=[Office.Status.INACTIVE, Office.Status.CLOSED]
+            ).order_by("city", "code")
+            if not other_offices.exists():
+                continue
+            display_name = user.get_full_name() or user.username
+            places = "、".join(
+                f"{office.city or office.region or '未设置城市'}·{office.name}"
+                for office in other_offices
+            )
+            warnings.append(f"{display_name} 还居住在：{places}")
+        return warnings
 
     def get_contracts(self, obj):
         queryset = obj.contracts.select_related("owner", "contract_type").all()

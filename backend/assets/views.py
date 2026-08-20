@@ -694,7 +694,7 @@ class LookupView(APIView):
         ).select_related(
             "employee_profile__department"
         )
-        if not any(user_can_manage(request.user, scope) for scope in ("assets", "inventory", "vehicles", "procurement", "contracts", "expenses", "settings")):
+        if not any(user_can_manage(request.user, scope) for scope in ("assets", "inventory", "vehicles", "procurement", "contracts", "offices", "expenses", "settings")):
             users = users.filter(pk=request.user.pk)
         return Response(
             {
@@ -1799,7 +1799,11 @@ class OfficeViewSet(NoDeleteViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        queryset = Office.objects.prefetch_related("contracts__owner", "contracts__contract_type")
+        queryset = Office.objects.prefetch_related(
+            "contracts__owner",
+            "contracts__contract_type",
+            "resident_users__employee_profile__department",
+        )
         if not any(user_can_manage(self.request.user, scope) for scope in ("offices", "contracts")):
             return queryset.none()
         query = self.request.query_params.get("q", "").strip()

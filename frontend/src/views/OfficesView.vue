@@ -3,8 +3,9 @@ import { computed, onMounted, reactive, ref } from "vue";
 
 import { api, ApiError } from "../api";
 import AppIcon from "../components/AppIcon.vue";
+import type { Lookups, User } from "../types";
 
-defineProps<{ isSuperuser: boolean }>();
+const props = defineProps<{ isSuperuser: boolean; lookups: Lookups | null }>();
 
 type OfficeContract = {
   id: number;
@@ -33,6 +34,10 @@ type OfficeRecord = {
   responsible_name: string;
   responsible_phone: string;
   residents: string;
+  resident_users: number[];
+  resident_user_details: User[];
+  resident_warnings: string[];
+  resident_capacity: number | null;
   resident_count: number | null;
   monthly_rent: string | number | null;
   rent_description: string;
@@ -64,6 +69,7 @@ const editing = ref<OfficeRecord | null>(null);
 const selectedOffice = ref<OfficeRecord | null>(null);
 const detailLoading = ref(false);
 const detailError = ref("");
+const residentQuery = ref("");
 const filters = reactive({ q: "", status: "", region: "", city: "", attention: "" });
 
 const form = reactive({
@@ -78,6 +84,8 @@ const form = reactive({
   responsible_name: "",
   responsible_phone: "",
   residents: "",
+  resident_users: [] as number[],
+  resident_capacity: "",
   resident_count: "",
   monthly_rent: "",
   rent_description: "",
@@ -127,6 +135,23 @@ const filteredRows = computed(() => {
 const activeCount = computed(() => rows.value.filter((item) => item.status === "active").length);
 const leaseAttentionCount = computed(() => rows.value.filter(isLeaseAttention).length);
 const paymentAttentionCount = computed(() => rows.value.filter(isPaymentAttention).length);
+const employeeOptions = computed(() => (props.lookups?.users || []).filter((user) => !user.is_superuser && user.employee_no));
+const filteredEmployeeOptions = computed(() => {
+  const keyword = residentQuery.value.trim().toLocaleLowerCase("zh-CN");
+  return employeeOptions.value.filter((user) => {
+    if (!keyword) return true;
+    return [user.display_name, user.username, user.employee_no, user.department_name]
+      .filter(Boolean).join(" ").toLocaleLowerCase("zh-CN").includes(keyword);
+  });
+});
+const selectedResidentWarnings = computed(() => {
+  const selected = new Set(form.resident_users);
+  return rows.value
+    .filter((item) => item.id !== editing.value?.id && !["inactive", "closed"].includes(item.status))
+    .flatMap((item) => item.resident_user_details
+      .filter((user) => selected.has(user.id))
+      .map((user) => `${user.display_name} 已在“${item.name}”居住`));
+});
 
 function unwrap<T>(value: ListPayload<T>) {
   return Array.isArray(value) ? value : value.results;
@@ -154,7 +179,13 @@ async function load() {
   error.value = "";
   try {
     const payload = await api<ListPayload<OfficeRecord>>("/offices/");
-    rows.value = unwrap(payload).map((item) => ({ ...item, contracts: item.contracts || [] }));
+    rows.value = unwrap(payload).map((item) => ({
+      ...item,
+      contracts: item.contracts || [],
+      resident_users: item.resident_users || [],
+      resident_user_details: item.resident_user_details || [],
+      resident_warnings: item.resident_warnings || [],
+    }));
   } catch (err) {
     error.value = errorText(err, "办事处台账暂时无法加载。");
   } finally {
@@ -171,13 +202,14 @@ function openNew() {
   Object.assign(form, {
     code: "", name: "", status: "active", region: "", city: "", address: "",
     room_layout: "", area_sqm: "", responsible_name: "", responsible_phone: "",
-    residents: "", resident_count: "", monthly_rent: "", rent_description: "",
+    residents: "", resident_users: [], resident_capacity: "", resident_count: "", monthly_rent: "", rent_description: "",
     deposit: "", payment_frequency: "", payment_method: "", payment_terms: "",
     next_payment_date: "", latest_payment_amount: "", lease_start: "", lease_end: "",
     expected_move_out_date: "", renewal_status: "", sales_project: "",
     cost_attribution: "", feedback: "", notes: "",
   });
   formError.value = "";
+  residentQuery.value = "";
   showForm.value = true;
 }
 
@@ -188,7 +220,8 @@ function openEdit(item: OfficeRecord) {
     region: item.region || "", city: item.city || "", address: item.address || "",
     room_layout: item.room_layout || "", area_sqm: valueText(item.area_sqm),
     responsible_name: item.responsible_name || "", responsible_phone: item.responsible_phone || "",
-    residents: item.residents || "", resident_count: valueText(item.resident_count),
+    residents: item.residents || "", resident_users: [...(item.resident_users || [])],
+    resident_capacity: valueText(item.resident_capacity), resident_count: valueText(item.resident_count),
     monthly_rent: valueText(item.monthly_rent), rent_description: item.rent_description || "",
     deposit: valueText(item.deposit), payment_frequency: item.payment_frequency || "",
     payment_method: item.payment_method || "", payment_terms: item.payment_terms || "",
@@ -199,7 +232,15 @@ function openEdit(item: OfficeRecord) {
     feedback: item.feedback || "", notes: item.notes || "",
   });
   formError.value = "";
+  residentQuery.value = "";
   showForm.value = true;
+}
+
+function toggleResident(userId: number) {
+  form.resident_users = form.resident_users.includes(userId)
+    ? form.resident_users.filter((id) => id !== userId)
+    : [...form.resident_users, userId];
+  form.resident_count = String(form.resident_users.length);
 }
 
 function nullableNumber(value: string) {
@@ -215,6 +256,8 @@ function officePayload() {
     city: form.city.trim(),
     address: form.address.trim(),
     area_sqm: nullableNumber(form.area_sqm),
+    resident_users: form.resident_users,
+    resident_capacity: nullableNumber(form.resident_capacity),
     resident_count: nullableNumber(form.resident_count),
     monthly_rent: nullableNumber(form.monthly_rent),
     deposit: nullableNumber(form.deposit),
@@ -257,7 +300,13 @@ async function openDetail(item: OfficeRecord) {
   detailError.value = "";
   try {
     const detail = await api<OfficeRecord>(`/offices/${item.id}/`);
-    selectedOffice.value = { ...detail, contracts: detail.contracts || [] };
+    selectedOffice.value = {
+      ...detail,
+      contracts: detail.contracts || [],
+      resident_users: detail.resident_users || [],
+      resident_user_details: detail.resident_user_details || [],
+      resident_warnings: detail.resident_warnings || [],
+    };
   } catch (err) {
     detailError.value = errorText(err, "办事处详情暂时无法加载。");
   } finally {
@@ -363,7 +412,7 @@ onMounted(load);
         <dl class="office-facts">
           <div><dt>房型 / 面积</dt><dd>{{ item.room_layout || "—" }}<small>{{ item.area_sqm ? `${item.area_sqm} ㎡` : "面积未设置" }}</small></dd></div>
           <div><dt>现场负责人</dt><dd>{{ item.responsible_name || "未设置" }}<small>{{ item.responsible_phone || "未设置电话" }}</small></dd></div>
-          <div><dt>居住人员</dt><dd>{{ item.resident_count === null ? "人数待核对" : `${item.resident_count} 人` }}<small>{{ item.residents || "未登记名单" }}</small></dd></div>
+          <div><dt>居住情况</dt><dd>{{ item.resident_count === null ? "实际人数待核对" : `${item.resident_count} 人实际居住` }}<small>可住 {{ item.resident_capacity === null ? "未设置" : `${item.resident_capacity} 人` }} · {{ item.resident_user_details.length ? item.resident_user_details.map((user) => user.display_name).join("、") : (item.residents || "未登记名单") }}</small></dd></div>
           <div><dt>当前月租</dt><dd>{{ money(item.monthly_rent) }}<small>{{ item.payment_frequency || "未设置付款频率" }}</small></dd></div>
         </dl>
         <div class="lease-ribbon" :class="{ due: isLeaseAttention(item) }">
@@ -405,8 +454,21 @@ onMounted(load);
             <div class="office-form-grid">
               <label><span>现场负责人</span><input v-model="form.responsible_name" /></label>
               <label><span>负责人电话</span><input v-model="form.responsible_phone" inputmode="tel" /></label>
-              <label><span>居住人数</span><input v-model="form.resident_count" type="number" min="0" step="1" /></label>
-              <label class="wide"><span>居住人员</span><textarea v-model="form.residents" placeholder="多人可用顿号分隔；流动人员可直接文字说明"></textarea></label>
+              <label><span>可住人数</span><input v-model="form.resident_capacity" type="number" min="0" step="1" /></label>
+              <label><span>实际居住人数</span><input v-model="form.resident_count" type="number" min="0" step="1" /><small>选择在职员工后会自动带出，可按现场实际调整。</small></label>
+              <div class="wide resident-picker">
+                <div class="resident-picker-head"><span>居住员工（在职）</span><small>可多选；同一员工居住在多个使用中办事处会提醒</small></div>
+                <input v-model="residentQuery" class="resident-search" placeholder="搜索姓名、工号或部门" />
+                <div v-if="filteredEmployeeOptions.length" class="resident-option-grid">
+                  <label v-for="user in filteredEmployeeOptions" :key="user.id" class="resident-option">
+                    <input type="checkbox" :checked="form.resident_users.includes(user.id)" @change="toggleResident(user.id)" />
+                    <span><strong>{{ user.display_name }}</strong><small>{{ user.employee_no }} · {{ user.department_name || "未设置部门" }}</small></span>
+                  </label>
+                </div>
+                <p v-else class="resident-empty">没有匹配的在职员工。</p>
+                <p v-if="selectedResidentWarnings.length" class="resident-warning"><strong>居住地提醒</strong>{{ selectedResidentWarnings.join("；") }}。</p>
+              </div>
+              <label class="wide"><span>其他居住人 / 原始名单</span><textarea v-model="form.residents" placeholder="保留非员工、流动人员或源表原始说明；员工请优先从上方选择"></textarea></label>
             </div>
           </section>
           <section class="office-form-section">
@@ -463,8 +525,11 @@ onMounted(load);
               <dl>
                 <div><dt>现场负责人</dt><dd>{{ selectedOffice.responsible_name || "未设置" }}</dd></div>
                 <div><dt>联系电话</dt><dd>{{ selectedOffice.responsible_phone || "未设置" }}</dd></div>
-                <div><dt>居住人数</dt><dd>{{ selectedOffice.resident_count === null ? "待核对" : `${selectedOffice.resident_count} 人` }}</dd></div>
-                <div class="wide"><dt>居住人员</dt><dd>{{ selectedOffice.residents || "未登记" }}</dd></div>
+                <div><dt>可住人数</dt><dd>{{ selectedOffice.resident_capacity === null ? "未设置" : `${selectedOffice.resident_capacity} 人` }}</dd></div>
+                <div><dt>实际居住人数</dt><dd>{{ selectedOffice.resident_count === null ? "待核对" : `${selectedOffice.resident_count} 人` }}</dd></div>
+                <div class="wide"><dt>居住员工</dt><dd>{{ selectedOffice.resident_user_details.length ? selectedOffice.resident_user_details.map((user) => `${user.display_name}（${user.department_name || "未设置部门"}）`).join("、") : "未匹配在职员工" }}</dd></div>
+                <div v-if="selectedOffice.residents" class="wide"><dt>其他居住人 / 原始名单</dt><dd>{{ selectedOffice.residents }}</dd></div>
+                <div v-if="selectedOffice.resident_warnings.length" class="wide resident-warning"><dt>居住地提醒</dt><dd>{{ selectedOffice.resident_warnings.join("；") }}</dd></div>
               </dl>
             </section>
             <section class="office-detail-section">
@@ -573,6 +638,21 @@ onMounted(load);
 .office-form-grid input, .office-form-grid select, .office-form-grid textarea { width: 100%; min-height: 43px; padding: 10px 12px; color: #18313c; border: 1px solid #cbd7dc; border-radius: 10px; background: #fff; }
 .office-form-grid textarea { min-height: 78px; resize: vertical; }
 .office-form-grid .wide { grid-column: 1 / -1; }
+.office-form-grid label > small { color: var(--ink-soft); font-size: 11px; }
+.resident-picker { display: grid; gap: 10px; }
+.resident-picker-head { display: flex; align-items: baseline; gap: 10px; }
+.resident-picker-head > span { color: #405964; font-size: 12px; font-weight: 800; }
+.resident-picker-head > small { color: var(--ink-soft); font-size: 11px; }
+.resident-search { min-height: 39px; padding: 8px 11px; border: 1px solid #cbd7dc; border-radius: 9px; }
+.resident-option-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 220px; overflow: auto; padding: 2px; }
+.resident-option { display: flex !important; min-width: 0; flex-direction: row !important; align-items: flex-start; gap: 8px !important; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfc; }
+.resident-option:has(input:checked) { border-color: var(--blue); background: rgba(25, 95, 164, 0.06); }
+.resident-option > span { display: grid; min-width: 0; gap: 3px; }
+.resident-option strong, .resident-option small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resident-option small { color: var(--ink-soft); font-size: 10px; }
+.resident-empty { margin: 0; color: var(--ink-soft); font-size: 12px; }
+.resident-warning { margin: 0; padding: 10px 12px; border-radius: 8px; color: #80501a; background: #fff3e5; font-size: 12px; line-height: 1.6; }
+.resident-warning strong { margin-right: 7px; }
 .office-form-footer { position: sticky; z-index: 2; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px); }
 .office-detail-modal { width: min(1040px, 96vw); }
 .office-detail-loading { display: grid; min-height: 340px; place-items: center; color: var(--ink-soft); }
@@ -623,6 +703,7 @@ onMounted(load);
   .office-result-count { width: 100%; margin-left: 0; }
   .office-form-grid { grid-template-columns: 1fr; }
   .office-form-grid .wide { grid-column: auto; }
+  .resident-option-grid { grid-template-columns: 1fr; }
   .office-form-section > header { align-items: flex-start; flex-direction: column; }
   .office-detail-body { grid-template-columns: 1fr; }
   .office-address-plaque { position: relative; min-height: 210px; }
