@@ -37,7 +37,7 @@ from .models import (
     VehicleDispatch,
     VehicleExpense,
 )
-from .permissions import management_scopes
+from .permissions import is_hidden_superuser, management_scopes
 from .services import align_asset_tag, generate_asset_tag, perform_asset_action
 
 User = get_user_model()
@@ -765,6 +765,13 @@ class ContractSerializer(serializers.ModelSerializer):
     def get_days_to_expiry(self, obj):
         return (obj.end_date - date.today()).days if obj.end_date else None
 
+    def _visible_related_contracts(self, related_manager):
+        items = list(related_manager.all())
+        request = self.context.get("request")
+        if request and not is_hidden_superuser(request.user):
+            return [item for item in items if item.owner_id == request.user.id]
+        return items
+
     def get_attachments(self, obj):
         return ContractAttachmentSerializer(obj.attachments.all(), many=True).data
 
@@ -782,7 +789,7 @@ class ContractSerializer(serializers.ModelSerializer):
                 "start_date": item.start_date,
                 "end_date": item.end_date,
             }
-            for item in obj.renewal_contracts.all()
+            for item in self._visible_related_contracts(obj.renewal_contracts)
         ]
 
     def get_supplement_contracts(self, obj):
@@ -797,12 +804,15 @@ class ContractSerializer(serializers.ModelSerializer):
                 "status": item.status,
                 "status_label": item.get_status_display(),
             }
-            for item in obj.supplement_contracts.all()
+            for item in self._visible_related_contracts(obj.supplement_contracts)
         ]
 
     def get_total_amount(self, obj):
         total = obj.amount + sum(
-            (item.amount for item in obj.supplement_contracts.all()),
+            (
+                item.amount
+                for item in self._visible_related_contracts(obj.supplement_contracts)
+            ),
             Decimal("0"),
         )
         return str(total)

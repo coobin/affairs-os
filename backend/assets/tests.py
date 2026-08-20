@@ -1881,6 +1881,43 @@ class EmailNotificationTests(TestCase):
         self.assertIn("今天到期", due_subject)
         self.assertIn("已经超期", overdue_subject)
 
+    def test_contract_due_email_only_goes_to_owner_and_superuser(self):
+        owner = User.objects.create_user(
+            "contract-email-owner",
+            password="pass",
+            email="contract-owner@example.com",
+        )
+        other_manager = User.objects.create_user(
+            "other-contract-email-manager",
+            password="pass",
+            email="other-contract-manager@example.com",
+        )
+        superuser = User.objects.create_superuser(
+            "contract-email-superuser",
+            password="pass",
+            email="contract-superuser@example.com",
+        )
+        AssetManagerRole.objects.create(user=owner, scopes=["contracts"])
+        AssetManagerRole.objects.create(user=other_manager, scopes=["contracts"])
+        Contract.objects.create(
+            contract_no="HT-MAIL-OWNER-001",
+            name="负责人专属合同",
+            owner=owner,
+            status=Contract.Status.ACTIVE,
+            end_date=timezone.localdate() + timedelta(days=10),
+        )
+
+        send_daily_operational_notifications()
+
+        recipients = set(
+            EmailNotification.objects.filter(event_type="contract_expiry")
+            .values_list("recipient_email", flat=True)
+        )
+        self.assertEqual(
+            recipients,
+            {"contract-owner@example.com", "contract-superuser@example.com"},
+        )
+
     def test_user_deactivation_sends_manager_email_once(self):
         self.asset.status = Asset.Status.ASSIGNED
         self.asset.assigned_to = self.requester
@@ -2273,12 +2310,121 @@ class AdministrativePhaseTests(TestCase):
             contract_no="HT-NODEL-001",
             name="保留合同",
             category=self.category,
+            owner=self.employee,
             amount="1000.00",
             status=Contract.Status.ACTIVE,
         )
         deleted = self.client.delete(f"/api/v1/contracts/{contract.pk}/")
         self.assertEqual(deleted.status_code, 405)
         self.assertTrue(Contract.objects.filter(pk=contract.pk).exists())
+
+    def test_contract_manager_only_sees_and_operates_own_contracts(self):
+        other_manager = User.objects.create_user("other-contract-manager", password="pass")
+        AssetManagerRole.objects.create(user=self.employee, scopes=["contracts"])
+        AssetManagerRole.objects.create(user=other_manager, scopes=["contracts"])
+        own = Contract.objects.create(
+            contract_no="HT-OWN-001",
+            name="本人合同",
+            owner=self.employee,
+            amount="1000.00",
+            status=Contract.Status.ACTIVE,
+            end_date=timezone.localdate() + timedelta(days=10),
+        )
+        other = Contract.objects.create(
+            contract_no="HT-OTHER-001",
+            name="他人合同",
+            owner=other_manager,
+            amount="2000.00",
+            status=Contract.Status.ACTIVE,
+            end_date=timezone.localdate() + timedelta(days=10),
+        )
+        Contract.objects.create(
+            contract_no="HT-NO-OWNER-001",
+            name="未分配合同",
+            amount="3000.00",
+        )
+        self.client.force_authenticate(self.employee)
+
+        listed = self.client.get("/api/v1/contracts/")
+        own_detail = self.client.get(f"/api/v1/contracts/{own.pk}/")
+        other_detail = self.client.get(f"/api/v1/contracts/{other.pk}/")
+        other_history = self.client.get(f"/api/v1/contracts/{other.pk}/history/")
+        dashboard = self.client.get("/api/v1/dashboard/")
+
+        self.assertEqual([row["id"] for row in listed.data], [own.id])
+        self.assertEqual(own_detail.status_code, 200)
+        self.assertEqual(other_detail.status_code, 404)
+        self.assertEqual(other_history.status_code, 404)
+        self.assertEqual(dashboard.data["admin_tasks"]["expiring_contracts"], 1)
+
+    def test_contract_manager_is_forced_as_owner_on_create_update_and_renew(self):
+        other_manager = User.objects.create_user("other-contract-owner", password="pass")
+        AssetManagerRole.objects.create(user=self.employee, scopes=["contracts"])
+        self.client.force_authenticate(self.employee)
+
+        created = self.client.post(
+            "/api/v1/contracts/",
+            {
+                "contract_no": "HT-FORCED-OWNER-001",
+                "name": "自动负责人合同",
+                "owner": other_manager.id,
+                "amount": "1000.00",
+                "status": Contract.Status.ACTIVE,
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        contract = Contract.objects.get(pk=created.data["id"])
+        self.assertEqual(contract.owner, self.employee)
+
+        updated = self.client.patch(
+            f"/api/v1/contracts/{contract.pk}/",
+            {"owner": other_manager.id, "notes": "尝试改给他人"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        contract.refresh_from_db()
+        self.assertEqual(contract.owner, self.employee)
+
+        renewed = self.client.post(
+            f"/api/v1/contracts/{contract.pk}/renew/",
+            {
+                "contract_no": "HT-FORCED-OWNER-002",
+                "name": "续签合同",
+                "owner": other_manager.id,
+                "amount": "1200.00",
+                "status": Contract.Status.ACTIVE,
+            },
+            format="json",
+        )
+        self.assertEqual(renewed.status_code, 201)
+        self.assertEqual(Contract.objects.get(pk=renewed.data["id"]).owner, self.employee)
+
+    def test_superuser_can_see_all_contracts_and_assign_owner(self):
+        other_manager = User.objects.create_user("visible-contract-owner", password="pass")
+        first = Contract.objects.create(
+            contract_no="HT-ALL-001",
+            name="第一份合同",
+            owner=self.employee,
+        )
+        second = Contract.objects.create(
+            contract_no="HT-ALL-002",
+            name="第二份合同",
+            owner=other_manager,
+        )
+        self.client.force_authenticate(self.admin)
+
+        listed = self.client.get("/api/v1/contracts/")
+        reassigned = self.client.patch(
+            f"/api/v1/contracts/{first.pk}/",
+            {"owner": other_manager.id},
+            format="json",
+        )
+
+        self.assertEqual({row["id"] for row in listed.data}, {first.id, second.id})
+        self.assertEqual(reassigned.status_code, 200)
+        first.refresh_from_db()
+        self.assertEqual(first.owner, other_manager)
 
     def test_superuser_can_delete_asset_with_history(self):
         self.client.force_authenticate(self.admin)

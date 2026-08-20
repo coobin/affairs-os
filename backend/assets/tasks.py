@@ -11,7 +11,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import Asset, Contract, EmailNotification, Vehicle
-from .permissions import HIDDEN_SYSTEM_USERNAME
+from .permissions import HIDDEN_SYSTEM_USERNAME, is_hidden_superuser
 
 
 User = get_user_model()
@@ -219,7 +219,11 @@ def send_daily_operational_notifications():
         if contract.end_date <= today + timedelta(days=contract.renewal_notice_days)
     ]
     for contract in contract_due:
-        recipients = notification_manager_users("contracts")
+        recipients = [
+            user
+            for user in notification_manager_users("contracts")
+            if is_hidden_superuser(user)
+        ]
         if contract.owner:
             recipients = [*recipients, contract.owner]
         queue_email_notification(

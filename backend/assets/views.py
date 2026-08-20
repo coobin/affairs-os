@@ -118,6 +118,13 @@ from .services import perform_asset_action
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+
+def contracts_visible_to(user, queryset=None):
+    queryset = queryset if queryset is not None else Contract.objects.all()
+    if is_hidden_superuser(user):
+        return queryset
+    return queryset.filter(owner=user)
+
 ASSET_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 CONTRACT_FILE_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
@@ -609,6 +616,15 @@ class DashboardView(APIView):
         status_options = AssetStatus.objects.filter(
             Q(is_active=True) | Q(code__in=status_counts.keys())
         ).distinct()
+        expiring_contracts = Contract.objects.none()
+        if user_can_manage(request.user, "contracts"):
+            expiring_contracts = contracts_visible_to(
+                request.user,
+                Contract.objects.filter(
+                    status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
+                    end_date__lte=today + timedelta(days=30),
+                ),
+            )
         return Response(
             {
                 "summary": {
@@ -627,7 +643,7 @@ class DashboardView(APIView):
                     "pending_vehicle_dispatches": VehicleDispatch.objects.filter(status=VehicleDispatch.Status.PENDING).count() if user_can_manage(request.user, "vehicles") else 0,
                     "due_vehicle_documents": Vehicle.objects.filter(Q(insurance_expires_at__lte=today + timedelta(days=30)) | Q(inspection_expires_at__lte=today + timedelta(days=30))).exclude(status=Vehicle.Status.RETIRED).count() if user_can_manage(request.user, "vehicles") else 0,
                     "pending_purchase_requests": PurchaseRequest.objects.filter(status=PurchaseRequest.Status.PENDING).count() if user_can_manage(request.user, "procurement") else 0,
-                    "expiring_contracts": Contract.objects.filter(status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED], end_date__lte=today + timedelta(days=30)).count() if user_can_manage(request.user, "contracts") else 0,
+                    "expiring_contracts": expiring_contracts.count(),
                 },
                 "status_distribution": [
                     {
@@ -1601,6 +1617,7 @@ class ContractViewSet(viewsets.ModelViewSet):
         )
         if not any(user_can_manage(self.request.user, scope) for scope in ("contracts", "expenses", "procurement")):
             return queryset.none()
+        queryset = contracts_visible_to(self.request.user, queryset)
         if self.action == "list":
             queryset = queryset.filter(renewal_contracts__isnull=True, supplement_of__isnull=True)
         query = self.request.query_params.get("q", "").strip()
@@ -1620,6 +1637,18 @@ class ContractViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(contract_type_id=contract_type)
         return queryset.distinct()
 
+    def perform_create(self, serializer):
+        if is_hidden_superuser(self.request.user):
+            serializer.save()
+        else:
+            serializer.save(owner=self.request.user)
+
+    def perform_update(self, serializer):
+        if is_hidden_superuser(self.request.user):
+            serializer.save()
+        else:
+            serializer.save(owner=self.request.user)
+
     @action(detail=True, methods=["get"], url_path="history")
     def history(self, request, pk=None):
         contract = self.get_object()
@@ -1627,6 +1656,8 @@ class ContractViewSet(viewsets.ModelViewSet):
         visited = set()
         current = contract
         while current and current.pk not in visited:
+            if not is_hidden_superuser(request.user) and current.owner_id != request.user.id:
+                break
             visited.add(current.pk)
             chain.append(current)
             current = current.previous_contract
@@ -1641,7 +1672,10 @@ class ContractViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
-            renewed = serializer.save(previous_contract=previous)
+            save_kwargs = {"previous_contract": previous}
+            if not is_hidden_superuser(request.user):
+                save_kwargs["owner"] = request.user
+            renewed = serializer.save(**save_kwargs)
             if previous.status not in {Contract.Status.COMPLETED, Contract.Status.TERMINATED}:
                 previous.status = Contract.Status.COMPLETED
                 previous.save(update_fields=["status", "updated_at"])

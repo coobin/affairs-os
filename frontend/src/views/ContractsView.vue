@@ -142,13 +142,14 @@ function openRenew(item: Contract) {
 
 async function saveContract() {
   formError.value = "";
+  const { owner, ...formFields } = form;
   const payload = {
-    ...form,
+    ...formFields,
     contract_type: form.contract_type ? Number(form.contract_type) : null,
     supplier: form.supplier ? Number(form.supplier) : null,
     category: form.category ? Number(form.category) : null,
     department: form.department ? Number(form.department) : null,
-    owner: form.owner ? Number(form.owner) : null,
+    ...(props.isSuperuser ? { owner: owner ? Number(owner) : null } : {}),
     start_date: form.start_date || null, end_date: form.end_date || null,
   };
   try {
@@ -331,7 +332,8 @@ onMounted(load);
               <label><span>供应商</span><select v-model="form.supplier"><option value="">未设置</option><option v-for="item in suppliers" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
               <label><span>费用类别</span><select v-model="form.category"><option value="">未设置</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
               <label><span>归属部门</span><select v-model="form.department"><option value="">未设置</option><option v-for="item in lookups?.departments || []" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-              <label><span>负责人</span><PersonSearchSelect v-model="form.owner" :users="lookups?.users || []" /></label>
+              <label v-if="props.isSuperuser"><span>负责人</span><PersonSearchSelect v-model="form.owner" :users="lookups?.users || []" /></label>
+              <label v-else><span>负责人</span><input :value="editing?.owner_name || renewingFrom?.owner_name || '当前管理员（自动）'" disabled /><small>普通管理员登记的合同自动归本人负责</small></label>
               <label><span>状态</span><select v-model="form.status"><option value="draft">草稿</option><option value="active">履行中</option><option value="expired">已到期未处理</option><option value="completed">已完成</option><option value="terminated">已终止</option></select></label>
             </div>
           </section>
