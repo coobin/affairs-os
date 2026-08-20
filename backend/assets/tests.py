@@ -2229,17 +2229,23 @@ class AdministrativePhaseTests(TestCase):
         storage_delete.assert_called_once_with(attachment.remote_path)
         self.assertFalse(ContractAttachment.objects.filter(pk=attachment.pk).exists())
 
-    def test_contract_change_preserves_old_values_and_direct_overwrite_is_blocked(self):
+    def test_contract_dates_and_amount_can_be_edited_directly_or_with_change_history(self):
         self.client.force_authenticate(self.admin)
         contract = Contract.objects.create(
             contract_no="HT-CHANGE-001", name="年度服务合同", category=self.category,
             start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="12000.00",
             status=Contract.Status.ACTIVE,
         )
-        blocked = self.client.patch(
-            f"/api/v1/contracts/{contract.pk}/", {"end_date": "2027-12-31"}, format="json",
+        edited = self.client.patch(
+            f"/api/v1/contracts/{contract.pk}/",
+            {"start_date": "2026-02-01", "end_date": "2027-01-31", "amount": "15000.00"},
+            format="json",
         )
-        self.assertEqual(blocked.status_code, 400)
+        self.assertEqual(edited.status_code, 200)
+        contract.refresh_from_db()
+        self.assertEqual(contract.start_date, date(2026, 2, 1))
+        self.assertEqual(contract.end_date, date(2027, 1, 31))
+        self.assertEqual(contract.amount, Decimal("15000.00"))
         changed = self.client.post(
             f"/api/v1/contracts/{contract.pk}/changes/",
             {
@@ -2251,8 +2257,22 @@ class AdministrativePhaseTests(TestCase):
         contract.refresh_from_db()
         self.assertEqual(contract.end_date, date(2027, 12, 31))
         history = ContractChange.objects.get(pk=changed.data["id"])
-        self.assertEqual(history.old_end_date, date(2026, 12, 31))
+        self.assertEqual(history.old_end_date, date(2027, 1, 31))
         self.assertEqual(history.new_end_date, date(2027, 12, 31))
+
+    def test_contract_direct_edit_rejects_reversed_dates(self):
+        self.client.force_authenticate(self.admin)
+        contract = Contract.objects.create(
+            contract_no="HT-DATE-001", name="日期校验合同",
+            start_date=date(2026, 1, 1), end_date=date(2026, 12, 31), amount="1000.00",
+        )
+        invalid = self.client.patch(
+            f"/api/v1/contracts/{contract.pk}/",
+            {"start_date": "2027-01-01", "end_date": "2026-12-31"},
+            format="json",
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("结束日期不能早于开始日期。", invalid.data["errors"]["end_date"][0])
 
     def test_contract_renewal_creates_linked_record_and_completes_previous(self):
         self.client.force_authenticate(self.admin)
@@ -2979,3 +2999,33 @@ class AdministrativePhaseTests(TestCase):
         response = self.client.get("/api/v1/vehicle-dispatches/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, [])
+
+
+class PopulateContractAmountsTests(TestCase):
+    def test_only_unqualified_amount_descriptions_are_populated(self):
+        pure = Contract.objects.create(
+            contract_no="AMOUNT-PURE", name="明确总额", amount=0,
+            amount_description="1,350元",
+        )
+        rate = Contract.objects.create(
+            contract_no="AMOUNT-RATE", name="月度单价", amount=0,
+            amount_description="固定金额：5654元/月",
+        )
+        existing = Contract.objects.create(
+            contract_no="AMOUNT-EXISTING", name="已有金额", amount="999.00",
+            amount_description="1200元",
+        )
+
+        dry_output = io.StringIO()
+        call_command("populate_contract_amounts", dry_run=True, stdout=dry_output)
+        pure.refresh_from_db()
+        self.assertEqual(pure.amount, Decimal("0.00"))
+        self.assertIn("补录 1 份合同", dry_output.getvalue())
+
+        call_command("populate_contract_amounts")
+        pure.refresh_from_db()
+        rate.refresh_from_db()
+        existing.refresh_from_db()
+        self.assertEqual(pure.amount, Decimal("1350.00"))
+        self.assertEqual(rate.amount, Decimal("0.00"))
+        self.assertEqual(existing.amount, Decimal("999.00"))

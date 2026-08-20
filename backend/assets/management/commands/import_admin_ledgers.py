@@ -15,6 +15,7 @@ from django.db import transaction
 from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
+from assets.contract_amounts import amount_from_description
 from assets.models import (
     AssetManagerRole,
     Contract,
@@ -407,6 +408,7 @@ class Command(BaseCommand):
                 self.warnings.append(f"行政合同表第{row}行日期倒置")
             notes = join_notes(ws.cell(row, 26).value, warning)
             supplier = suppliers.get(normalize_name(ws.cell(row, 11).value))
+            amount_description = meaningful(ws.cell(row, 21).value)
             self._upsert_contract(external_id, {
                 "contract_no": contract_no,
                 "name": name[:180],
@@ -416,8 +418,8 @@ class Command(BaseCommand):
                 "status": contract_status(start, end, notes),
                 "start_date": start,
                 "end_date": end,
-                "amount": Decimal("0"),
-                "amount_description": meaningful(ws.cell(row, 21).value),
+                "amount": amount_from_description(amount_description) or Decimal("0"),
+                "amount_description": amount_description,
                 "cooperation_duration": meaningful(ws.cell(row, 6).value)[:120],
                 "cooperation_type": meaningful(ws.cell(row, 7).value)[:120],
                 "party_a": meaningful(ws.cell(row, 8).value)[:180],
@@ -447,6 +449,7 @@ class Command(BaseCommand):
             end = as_date(ws.cell(row, 15).value)
             notes = meaningful(ws.cell(row, 21).value)
             external_id = f"admin-ledger:contract:other:{row}"
+            amount_description = meaningful(ws.cell(row, 19).value)
             self._upsert_contract(external_id, {
                 "contract_no": f"LEG-OTH-{row - 3:04d}",
                 "name": name[:180],
@@ -456,8 +459,8 @@ class Command(BaseCommand):
                 "status": contract_status(start, end, notes, legacy=True),
                 "start_date": start,
                 "end_date": end,
-                "amount": Decimal("0"),
-                "amount_description": meaningful(ws.cell(row, 19).value),
+                "amount": amount_from_description(amount_description) or Decimal("0"),
+                "amount_description": amount_description,
                 "cooperation_duration": meaningful(ws.cell(row, 5).value)[:120],
                 "cooperation_type": meaningful(ws.cell(row, 6).value)[:120],
                 "party_a": meaningful(ws.cell(row, 7).value)[:180],
@@ -608,6 +611,7 @@ class Command(BaseCommand):
                 f"续租情况：{renewal}" if renewal else "",
                 defaults["notes"],
             )
+            amount_description = meaningful(ws.cell(row, 13).value)
             self._upsert_contract(contract_external_id, {
                 "contract_no": re.sub(r"\s+", "", meaningful(ws.cell(row, 7).value)) or f"OFFICE-LEASE-{sequence:03d}",
                 "name": f"{name}租赁合同"[:180],
@@ -617,8 +621,8 @@ class Command(BaseCommand):
                 "status": contract_status(lease_start, contract_end, contract_notes),
                 "start_date": lease_start,
                 "end_date": contract_end,
-                "amount": Decimal("0"),
-                "amount_description": meaningful(ws.cell(row, 13).value),
+                "amount": amount_from_description(amount_description) or Decimal("0"),
+                "amount_description": amount_description,
                 "party_b_contact": join_notes(defaults["landlord_name"], defaults["landlord_phone"])[:160],
                 "party_b_address": defaults["address"],
                 "payment_method": defaults["payment_method"],

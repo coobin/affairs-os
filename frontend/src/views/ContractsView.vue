@@ -335,7 +335,7 @@ onMounted(load);
         <header><div><p class="eyebrow">{{ formMode === 'renew' ? `续签自 ${renewingFrom?.contract_no}` : '合同台账' }}</p><h2>{{ formMode === 'edit' ? '编辑合同基础资料' : formMode === 'renew' ? '建立下一期合同' : '登记行政合同' }}</h2></div><button type="button" class="icon-button" @click="showForm = false">×</button></header>
         <div class="contract-form-body">
           <p v-if="formError" class="form-error">{{ formError }}</p>
-          <p v-if="formMode === 'edit'" class="modal-guidance">合同期限和金额请通过“登记变更”调整，系统会保留调整前的数据。</p>
+          <p v-if="formMode === 'edit'" class="modal-guidance">这里可以直接修正合同资料；需要保留调整前后记录时，仍可使用“登记变更”。</p>
           <section class="contract-form-section">
             <header><div><strong>基础资料</strong><span>合同身份、分类和经办信息</span></div></header>
             <div class="contract-form-grid">
@@ -354,9 +354,9 @@ onMounted(load);
           <section class="contract-form-section">
             <header><div><strong>履约与金额</strong><span>合同有效期、金额和到期处理方式</span></div></header>
             <div class="contract-form-grid contract-term-grid">
-              <label><span>开始日期</span><input v-model="form.start_date" type="date" :disabled="formMode === 'edit'" /></label>
-              <label><span>结束日期</span><input v-model="form.end_date" type="date" :disabled="formMode === 'edit'" /></label>
-              <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required :disabled="formMode === 'edit'" /></label>
+              <label><span>开始日期</span><input v-model="form.start_date" type="date" /></label>
+              <label><span>结束日期</span><input v-model="form.end_date" type="date" /></label>
+              <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required /></label>
               <label class="wide"><span>费用金额说明</span><input v-model="form.amount_description" placeholder="例如：按实际结算、3500 元/月" /></label>
               <label><span>到期提前提醒</span><span class="contract-input-suffix"><input v-model.number="form.renewal_notice_days" type="number" min="1" /><b>天</b></span></label>
               <label class="contract-renew-toggle"><input v-model="form.auto_renew" type="checkbox" /><span><strong>合同约定自动续期</strong></span></label>

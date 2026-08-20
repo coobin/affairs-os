@@ -924,19 +924,6 @@ class ContractSerializer(serializers.ModelSerializer):
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end < start:
             raise serializers.ValidationError({"end_date": "结束日期不能早于开始日期。"})
-        if self.instance:
-            protected = {
-                "start_date": "合同期限如需调整，请使用“登记变更”。",
-                "end_date": "合同期限如需调整，请使用“登记变更”。",
-                "amount": "合同金额如需调整，请使用“登记变更”。",
-            }
-            errors = {
-                field: message
-                for field, message in protected.items()
-                if field in attrs and attrs[field] != getattr(self.instance, field)
-            }
-            if errors:
-                raise serializers.ValidationError(errors)
         return attrs
 
 

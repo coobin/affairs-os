@@ -47,7 +47,20 @@ const current = computed(() => {
 const selectedManager = computed(() =>
   managerUsers.value.find((user) => String(user.id) === String(managerUserId.value)) || null,
 );
+const authorizedManagers = computed(() => [...managerUsers.value]
+  .filter((user) => user.is_superuser || user.management_scopes.length > 0)
+  .sort((left, right) => left.display_name.localeCompare(right.display_name, "zh-CN")));
 const logPageCount = computed(() => Math.max(1, Math.ceil(logCount.value / 50)));
+
+function managerScopeLabels(user: User) {
+  if (user.is_superuser) return ["全部板块"];
+  const labelsByScope = new Map(modules.value.map((item) => [item.value, item.label]));
+  return user.management_scopes.map((scope) => labelsByScope.get(scope) || scope);
+}
+
+function editManager(user: User) {
+  managerUserId.value = String(user.id);
+}
 
 async function load(kind: BaseKind) { rows[kind] = await api<Row[]>(`/${kind}/?page_size=500`); }
 async function loadModules() {
@@ -58,7 +71,7 @@ async function loadModules() {
 async function loadManagers() {
   if (!props.isSuperuser) return;
   const data = await api<{ modules: Module[]; users: User[] }>("/settings/managers/");
-  modules.value = data.modules.filter((item) => item.value !== "stocktake");
+  modules.value = data.modules;
   managerUsers.value = data.users;
 }
 async function loadLogs(page = 1) {
@@ -157,7 +170,7 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
     <nav class="settings-tabs">
       <button v-for="key in (['categories','asset-statuses','locations','departments','expense-categories','contract-types'] as BaseKind[])" :key="key" :class="{ active: tab === key }" @click="select(key)">{{ labels[key] }}<span>{{ rows[key].length }}</span></button>
       <button v-if="isSuperuser" :class="{ active: tab === 'modules' }" @click="select('modules')">模块开关<span>{{ moduleRows.filter((item) => item.enabled).length }}/{{ moduleRows.length }}</span></button>
-      <button v-if="isSuperuser" :class="{ active: tab === 'managers' }" @click="select('managers')">板块管理员<span>{{ managerUsers.filter((item) => item.management_scopes.length).length }}</span>
+      <button v-if="isSuperuser" :class="{ active: tab === 'managers' }" @click="select('managers')">板块管理员<span>{{ authorizedManagers.length }}</span>
       </button>
       <button v-if="isSuperuser" :class="{ active: tab === 'logs' }" @click="select('logs')">操作日志<span>{{ logCount }}</span></button>
     </nav>
@@ -187,6 +200,17 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
     <section v-else-if="tab === 'managers'" class="manager-settings">
       <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2><p>先搜索选择人员，再勾选其管理的板块。</p></div></header>
       <div class="manager-editor">
+        <section class="authorized-manager-section">
+          <header><div><strong>已授权管理员</strong><span>点击人员可直接调整授权</span></div><b>{{ authorizedManagers.length }} 人</b></header>
+          <div v-if="authorizedManagers.length" class="authorized-manager-list">
+            <button v-for="user in authorizedManagers" :key="user.id" type="button" :class="{ active: selectedManager?.id === user.id }" @click="editManager(user)">
+              <span class="authorized-manager-avatar">{{ user.display_name.slice(0, 1) }}</span>
+              <span class="authorized-manager-info"><strong>{{ user.display_name }}</strong><small>{{ user.department_name || '未设置部门' }} · {{ user.employee_no || user.username }}</small></span>
+              <span class="authorized-manager-scopes"><i v-for="scope in managerScopeLabels(user)" :key="scope">{{ scope }}</i></span>
+            </button>
+          </div>
+          <p v-else class="manager-note">还没有已授权的板块管理员。</p>
+        </section>
         <label class="manager-person-pick"><span>选择人员</span><PersonSearchSelect v-model="managerUserId" :users="managerUsers" placeholder="输入中文姓名搜索" /></label>
         <div v-if="selectedManager" class="manager-scope-card">
           <header><strong>{{ selectedManager.display_name }}</strong><small>{{ selectedManager.department_name || "未设置部门" }} · {{ selectedManager.employee_no || "无工号" }}</small><span v-if="selectedManager.is_superuser" class="manager-on">超级管理员</span></header>
