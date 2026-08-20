@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db.models.signals import pre_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 User = get_user_model()
@@ -23,3 +23,13 @@ def notify_user_deactivated(sender, instance, **kwargs):
         instance,
         event_key=f"user-inactive:{instance.pk}",
     )
+
+
+@receiver(post_save, sender="assets.EmployeeProfile")
+def sync_assigned_assets_department(sender, instance, **kwargs):
+    """人员部门变化后，所有名下资产同步跟随，且允许同步清空。"""
+    from .models import Asset
+
+    Asset.objects.filter(assigned_to=instance.user).exclude(
+        custodian_department_id=instance.department_id,
+    ).update(custodian_department_id=instance.department_id)

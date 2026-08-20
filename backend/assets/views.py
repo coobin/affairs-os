@@ -1456,6 +1456,11 @@ class ReportAssetDetailView(APIView):
         kind = str(request.data.get("kind") or "").strip()
         if kind not in self.DETAIL_TITLES:
             return Response({"message": "这个明细不支持批量补齐。"}, status=400)
+        if kind == "department":
+            return Response(
+                {"message": "归属部门由责任人自动确定，请到资产详情中选择责任人。"},
+                status=400,
+            )
         raw_ids = request.data.get("asset_ids") or []
         try:
             asset_ids = list(dict.fromkeys(int(value) for value in raw_ids))
@@ -1463,17 +1468,12 @@ class ReportAssetDetailView(APIView):
             return Response({"message": "资产选择有误。"}, status=400)
         if not asset_ids:
             return Response({"message": "请至少选择一件资产。"}, status=400)
-        if kind == "department":
-            queryset = Asset.objects.select_related(
-                "category", "current_location", "assigned_to", "custodian_department"
-            ).select_for_update(of=("self",)).filter(pk__in=asset_ids)
-        else:
-            queryset = self._queryset(kind).select_for_update(of=("self",)).filter(pk__in=asset_ids)
+        queryset = self._queryset(kind).select_for_update(of=("self",)).filter(pk__in=asset_ids)
         assets = list(queryset)
         if len(assets) != len(asset_ids):
             return Response({"message": "部分资产已完成补齐，请刷新后重试。"}, status=409)
 
-        category = location = department = None
+        category = location = None
         serial_numbers = request.data.get("serial_numbers") or {}
         if kind == "missing_category":
             category = AssetCategory.objects.filter(pk=request.data.get("category_id"), is_active=True).first()
@@ -1496,10 +1496,6 @@ class ReportAssetDetailView(APIView):
             duplicates = Asset.objects.exclude(pk__in=asset_ids).filter(duplicate_query)
             if duplicates.exists():
                 return Response({"message": "填写的序列号已被其他资产使用。"}, status=400)
-        elif kind == "department":
-            department = Department.objects.filter(pk=request.data.get("department_id"), is_active=True).first()
-            if not department:
-                return Response({"message": "请选择有效的归属部门。"}, status=400)
 
         for asset in assets:
             before_location = asset.current_location
@@ -1515,11 +1511,6 @@ class ReportAssetDetailView(APIView):
                 asset.serial_number = str(serial_numbers[str(asset.pk)]).strip()
                 asset.save(update_fields=["serial_number", "updated_at"])
                 change_note = "批量补齐序列号"
-            elif kind == "department":
-                before_department = asset.custodian_department
-                asset.custodian_department = department
-                asset.save(update_fields=["custodian_department", "updated_at"])
-                change_note = f"批量分配归属部门：{department.name}"
             else:
                 custom_data = dict(asset.custom_data)
                 resolved = custom_data.pop("import_warnings", [])
@@ -1539,17 +1530,7 @@ class ReportAssetDetailView(APIView):
                 to_location=asset.current_location,
                 actor=request.user,
                 notes=change_note,
-                metadata={
-                    "report_batch_completion": kind,
-                    **(
-                        {
-                            "from_department": before_department.name if before_department else "",
-                            "to_department": department.name,
-                        }
-                        if kind == "department"
-                        else {}
-                    ),
-                },
+                metadata={"report_batch_completion": kind},
             )
         return Response({"message": f"已补齐 {len(assets)} 件资产。", "updated": len(assets)})
 

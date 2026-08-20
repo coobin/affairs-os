@@ -238,6 +238,15 @@ class Asset(TimeStampedModel):
             models.Index(fields=["assigned_to", "status"], name="asset_user_status_idx"),
             models.Index(fields=["current_location", "status"], name="asset_loc_status_idx"),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(assigned_to__isnull=False)
+                    | models.Q(custodian_department__isnull=True)
+                ),
+                name="asset_department_requires_user",
+            ),
+        ]
         verbose_name = "资产"
         verbose_name_plural = "资产"
 
@@ -263,12 +272,18 @@ class Asset(TimeStampedModel):
 
     def save(self, *args, **kwargs):
         self.name = self.build_display_name()
+        profile = getattr(self.assigned_to, "employee_profile", None) if self.assigned_to_id else None
+        self.custodian_department = profile.department if profile else None
         if isinstance(self.custom_data, dict) and "responsible_person" in self.custom_data:
             self.custom_data = dict(self.custom_data)
             self.custom_data.pop("responsible_person", None)
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:
-            kwargs["update_fields"] = set(update_fields) | {"name", "custom_data"}
+            kwargs["update_fields"] = set(update_fields) | {
+                "name",
+                "custom_data",
+                "custodian_department",
+            }
         return super().save(*args, **kwargs)
 
     def get_status_display(self):

@@ -21,14 +21,13 @@ const saving = ref(false);
 const selected = ref<number[]>([]);
 const categoryId = ref("");
 const locationId = ref("");
-const departmentId = ref("");
 const openedDepartmentId = ref<number | null>(null);
 const serialNumbers = reactive<Record<number, string>>({});
 
 const maxCategory = computed(() => Math.max(1, ...(data.value?.by_category.map((x) => x.total) || [1])));
 const selectedCount = computed(() => selected.value.length);
 const allSelected = computed(() => Boolean(detail.value?.results.length) && selected.value.length === detail.value?.results.length);
-const canBatch = computed(() => props.canManageAssets);
+const canBatch = computed(() => props.canManageAssets && detail.value?.kind !== "department");
 const money = (value: string) => new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 0 }).format(Number(value));
 
 async function loadReports() {
@@ -44,7 +43,6 @@ async function openDetail(kind: DetailKind, sourceDepartmentId?: number | null) 
   selected.value = [];
   categoryId.value = "";
   locationId.value = "";
-  departmentId.value = "";
   Object.keys(serialNumbers).forEach((key) => delete serialNumbers[Number(key)]);
   const params = new URLSearchParams({ kind });
   if (sourceDepartmentId) params.set("department_id", String(sourceDepartmentId));
@@ -77,7 +75,6 @@ async function saveBatch() {
   const payload: Record<string, unknown> = { kind: detail.value.kind, asset_ids: selected.value };
   if (detail.value.kind === "missing_category") payload.category_id = categoryId.value;
   if (detail.value.kind === "missing_location") payload.location_id = locationId.value;
-  if (detail.value.kind === "department") payload.department_id = departmentId.value;
   if (detail.value.kind === "missing_serial") {
     payload.serial_numbers = Object.fromEntries(selected.value.map((id) => [String(id), serialNumbers[id] || ""]));
   }
@@ -120,8 +117,7 @@ onMounted(loadReports);
           <label><input type="checkbox" :checked="allSelected" @change="toggleAll" />全选本页</label>
           <select v-if="detail.kind === 'missing_category'" v-model="categoryId"><option value="">统一设置资产类型</option><option v-for="item in lookups?.categories || []" :key="item.id" :value="item.id">{{ item.class_type_label }} · {{ item.name }}</option></select>
           <select v-if="detail.kind === 'missing_location'" v-model="locationId"><option value="">统一设置地点</option><option v-for="item in lookups?.locations || []" :key="item.id" :value="item.id">{{ item.name }}</option></select>
-          <select v-if="detail.kind === 'department'" v-model="departmentId"><option value="">批量分配归属部门</option><option v-for="item in lookups?.departments || []" :key="item.id" :value="item.id">{{ item.name }}</option></select>
-          <button class="primary-button" :disabled="!selectedCount || saving || (detail.kind === 'missing_category' && !categoryId) || (detail.kind === 'missing_location' && !locationId) || (detail.kind === 'department' && !departmentId)" @click="saveBatch">{{ saving ? "正在保存…" : detail.kind === 'import_warnings' ? `确认已处理（${selectedCount}）` : detail.kind === 'department' ? `分配部门（${selectedCount}）` : `保存勾选（${selectedCount}）` }}</button>
+          <button class="primary-button" :disabled="!selectedCount || saving || (detail.kind === 'missing_category' && !categoryId) || (detail.kind === 'missing_location' && !locationId)" @click="saveBatch">{{ saving ? "正在保存…" : detail.kind === 'import_warnings' ? `确认已处理（${selectedCount}）` : `保存勾选（${selectedCount}）` }}</button>
         </div>
         <div v-if="detailError" class="error-block">{{ detailError }}</div>
         <div v-if="!detail.results.length" class="empty-state large">这里已经没有需要处理的资产。</div>

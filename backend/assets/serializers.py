@@ -423,6 +423,7 @@ class AssetSerializer(serializers.ModelSerializer):
         read_only_fields = (
             "asset_tag",
             "name",
+            "custodian_department",
             "expected_return_at",
         )
 
@@ -461,6 +462,10 @@ class AssetSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        if "custodian_department" in self.initial_data:
+            raise serializers.ValidationError(
+                {"custodian_department": "归属部门由责任人自动确定，不允许单独设置。"}
+            )
         purchase_date = attrs.get("purchase_date", getattr(self.instance, "purchase_date", None))
         warranty = attrs.get(
             "warranty_expires_at",
@@ -470,15 +475,20 @@ class AssetSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"warranty_expires_at": "保修到期日不能早于采购日期。"})
         status = attrs.get("status", getattr(self.instance, "status", Asset.Status.AVAILABLE))
         assignee = attrs.get("assigned_to", getattr(self.instance, "assigned_to", None))
-        if "assigned_to" in attrs and "custodian_department" not in attrs and assignee:
-            profile = getattr(assignee, "employee_profile", None)
-            if profile and profile.department:
-                attrs["custodian_department"] = profile.department
+        if "assigned_to" in attrs and not assignee and status in {
+            Asset.Status.ASSIGNED,
+            Asset.Status.LOANED,
+        }:
+            status = Asset.Status.AVAILABLE
+            attrs["status"] = status
         if status in {Asset.Status.ASSIGNED, Asset.Status.LOANED} and not assignee:
             raise serializers.ValidationError({"assigned_to": "使用中或借用中的资产必须选择责任人。"})
         if status in {Asset.Status.AVAILABLE, Asset.Status.DISPOSED}:
             attrs["assigned_to"] = None
             attrs["expected_return_at"] = None
+            assignee = None
+        profile = getattr(assignee, "employee_profile", None) if assignee else None
+        attrs["custodian_department"] = profile.department if profile else None
         return attrs
 
     @transaction.atomic

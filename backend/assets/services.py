@@ -163,9 +163,6 @@ def perform_asset_action(
     if action in {"assign", "loan"}:
         locked.assigned_to = target_user
         locked.expected_return_at = expected_return_at if action == "loan" else None
-        profile = getattr(target_user, "employee_profile", None)
-        if profile and profile.department:
-            locked.custodian_department = profile.department
     elif action == "extend":
         locked.expected_return_at = expected_return_at
     elif action in {"return", "dispose"}:

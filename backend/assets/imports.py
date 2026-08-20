@@ -14,7 +14,6 @@ from .models import (
     AssetCategory,
     AssetEvent,
     AssetStatus,
-    Department,
     InventoryItem,
     InventoryTransaction,
     Location,
@@ -33,7 +32,6 @@ HEADER_ALIASES = {
     "kingdee_code": {"金蝶编码", "金蝶资产编码"},
     "assignee": {"责任人", "使用人", "领用人", "保管人"},
     "status": {"状态", "资产状态"},
-    "department": {"部门", "归属部门", "保管部门", "使用部门"},
     "class_type": {"资产大类", "资产归类"},
     "category": {"资产类型", "分类", "详细类型"},
     "location": {"资产位置", "位置", "当前地点"},
@@ -450,7 +448,6 @@ def parse_asset_workbook(file_obj):
                     "original_status": status,
                     "assignee": assignee,
                     "assignee_text": assignee_text,
-                    "department_name": _text(raw.get("department")),
                     "location_name": _text(raw.get("location")),
                     "purchase_date": purchase_date,
                     "purchase_cost": purchase_cost,
@@ -534,10 +531,6 @@ def apply_asset_import(rows, actor):
         elif class_type_explicit and category.class_type != class_type:
             category.class_type = class_type
             category.save(update_fields=["class_type", "updated_at"])
-        department_name = data.pop("department_name")
-        department = None
-        if department_name:
-            department = Department.objects.filter(name__iexact=department_name).first()
         location_name = data.pop("location_name")
         location = None
         if location_name:
@@ -561,7 +554,6 @@ def apply_asset_import(rows, actor):
             **data,
             "category": category,
             "assigned_to": assignee,
-            "custodian_department": department,
             "current_location": location,
             "kingdee_code": kingdee_code,
         }

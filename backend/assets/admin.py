@@ -46,7 +46,7 @@ class AssetAdmin(admin.ModelAdmin):
         "wired_mac",
         "wireless_mac",
     )
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("custodian_department", "created_at", "updated_at")
 
 
 @admin.register(AssetEvent)

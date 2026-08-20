@@ -29,7 +29,6 @@ const form = reactive({
   is_requestable: true,
   assigned_to: "",
   current_location: "",
-  custodian_department: "",
   purchase_date: "",
   purchase_cost: "",
   warranty_expires_at: "",
@@ -41,6 +40,10 @@ const selectedCategoryName = computed(
 const filteredCategories = computed(
   () => (props.lookups?.categories || []).filter((item) => item.class_type === form.class_type),
 );
+const selectedAssignee = computed(
+  () => props.lookups?.users.find((item) => String(item.id) === form.assigned_to),
+);
+const selectedDepartmentName = computed(() => selectedAssignee.value?.department_name || "");
 const displayName = computed(() => {
   const brand = form.brand.trim();
   const modelName = form.model_name.trim();
@@ -80,7 +83,6 @@ async function loadAsset() {
       is_requestable: asset.is_requestable,
       assigned_to: asset.assigned_to ? String(asset.assigned_to) : "",
       current_location: asset.current_location ? String(asset.current_location) : "",
-      custodian_department: asset.custodian_department ? String(asset.custodian_department) : "",
       purchase_date: asset.purchase_date || "",
       purchase_cost: asset.purchase_cost || "",
       warranty_expires_at: asset.warranty_expires_at || "",
@@ -105,7 +107,6 @@ async function save() {
     category: Number(form.category),
     assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
     current_location: form.current_location ? Number(form.current_location) : null,
-    custodian_department: form.custodian_department ? Number(form.custodian_department) : null,
     purchase_date: form.purchase_date || null,
     purchase_cost: form.purchase_cost || null,
     warranty_expires_at: form.warranty_expires_at || null,
@@ -154,10 +155,6 @@ function fieldError(name: string) {
 watch(() => form.assigned_to, (value) => {
   if (value && form.status === "available") form.status = "assigned";
   if (!value && ["assigned", "loaned"].includes(form.status)) form.status = "available";
-  if (value && !loadingAsset.value) {
-    const person = props.lookups?.users.find((item) => String(item.id) === String(value));
-    if (person?.department) form.custodian_department = String(person.department);
-  }
 }, { flush: "sync" });
 watch(() => form.status, (value) => {
   if (["available", "disposed"].includes(value)) form.assigned_to = "";
@@ -282,12 +279,8 @@ onMounted(loadAsset);
             </label>
             <label>
               <span>归属部门</span>
-              <select v-model="form.custodian_department">
-                <option value="">暂不设置</option>
-                <option v-for="item in props.lookups?.departments || []" :key="item.id" :value="item.id">
-                  {{ item.name }}
-                </option>
-              </select>
+              <input :value="selectedDepartmentName" disabled placeholder="选择责任人后自动带出" />
+              <small>{{ form.assigned_to ? (selectedDepartmentName ? "随责任人自动更新" : "该责任人未设置所属部门") : "未选择责任人时保持为空" }}</small>
             </label>
           </div>
         </section>

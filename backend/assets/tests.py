@@ -87,6 +87,7 @@ class AssetActionServiceTests(TestCase):
         )
         self.assertEqual(returned.asset.status, Asset.Status.INSPECTION)
         self.assertIsNone(returned.asset.assigned_to)
+        self.assertIsNone(returned.asset.custodian_department)
         self.assertEqual(self.asset.events.count(), 2)
 
     def test_loan_requires_expected_return_date(self):
@@ -172,6 +173,52 @@ class AssetApiTests(TestCase):
         employee = next(item for item in lookups.data["users"] if item["id"] == self.employee.id)
         self.assertEqual(employee["department"], department.id)
 
+    def test_clearing_assignee_also_clears_department_and_returns_asset_to_stock(self):
+        department = Department.objects.create(name="行政部", code="ADM")
+        EmployeeProfile.objects.create(user=self.employee, employee_no="E003", department=department)
+        self.asset.status = Asset.Status.ASSIGNED
+        self.asset.assigned_to = self.employee
+        self.asset.save()
+
+        response = self.client.patch(
+            f"/api/v1/assets/{self.asset.pk}/",
+            {"assigned_to": None},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], Asset.Status.AVAILABLE)
+        self.assertIsNone(response.data["assigned_to"])
+        self.assertIsNone(response.data["custodian_department"])
+
+    def test_department_cannot_be_set_independently(self):
+        department = Department.objects.create(name="法务部", code="LEGAL")
+        response = self.client.patch(
+            f"/api/v1/assets/{self.asset.pk}/",
+            {"custodian_department": department.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("不允许单独设置", str(response.data))
+
+    def test_employee_department_change_updates_assigned_assets(self):
+        old_department = Department.objects.create(name="旧部门", code="OLD-API")
+        new_department = Department.objects.create(name="新部门", code="NEW-API")
+        profile = EmployeeProfile.objects.create(
+            user=self.employee,
+            employee_no="E004",
+            department=old_department,
+        )
+        self.asset.status = Asset.Status.ASSIGNED
+        self.asset.assigned_to = self.employee
+        self.asset.save()
+
+        profile.department = new_department
+        profile.save()
+
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.custodian_department, new_department)
+
     def test_employee_cannot_open_asset_register(self):
         self.asset.assigned_to = self.employee
         self.asset.status = Asset.Status.ASSIGNED
@@ -187,12 +234,14 @@ class AssetApiTests(TestCase):
 
     def test_loan_can_be_extended(self):
         self.client.force_authenticate(self.admin)
+        loan_due = date.today() + timedelta(days=5)
+        extended_due = date.today() + timedelta(days=30)
         loaned = self.client.post(
             f"/api/v1/assets/{self.asset.pk}/actions/",
             {
                 "action": "loan",
                 "target_user_id": self.employee.pk,
-                "expected_return_at": "2026-08-10",
+                "expected_return_at": loan_due.isoformat(),
             },
             format="json",
         )
@@ -201,7 +250,7 @@ class AssetApiTests(TestCase):
             f"/api/v1/assets/{self.asset.pk}/actions/",
             {
                 "action": "extend",
-                "expected_return_at": "2026-09-10",
+                "expected_return_at": extended_due.isoformat(),
                 "notes": "项目延期",
             },
             format="json",
@@ -209,7 +258,7 @@ class AssetApiTests(TestCase):
         self.assertEqual(extended.status_code, 200)
         self.asset.refresh_from_db()
         self.assertEqual(self.asset.status, Asset.Status.LOANED)
-        self.assertEqual(self.asset.expected_return_at, date(2026, 9, 10))
+        self.assertEqual(self.asset.expected_return_at, extended_due)
         event = AssetEvent.objects.filter(
             asset=self.asset,
             action=AssetEvent.Action.EXTENDED,
@@ -548,6 +597,7 @@ class AssetExcelImportTests(TestCase):
         self.assertRegex(asset.asset_tag, r"^IT-[A-Z]{2}-\d{4}-001$")
         self.assertEqual(asset.kingdee_code, "KD-IT-001")
         self.assertEqual(asset.assigned_to, self.employee)
+        self.assertEqual(asset.custodian_department, self.department)
         self.assertEqual(asset.custom_data["system_code"], "QC-DZ-26-001")
         self.assertEqual(asset.events.count(), 1)
 
@@ -616,15 +666,16 @@ class AssetExcelImportTests(TestCase):
         self.assertEqual(response.status_code, 200)
         workbook = load_workbook(io.BytesIO(b"".join(response.streaming_content)), data_only=True)
         sheet = workbook["资产导入"]
-        headers = [cell.value for cell in sheet[1]]
+        headers = [cell.value for cell in sheet[1] if cell.value is not None]
         self.assertIn("责任人", headers)
         self.assertIn("金蝶编码", headers)
         self.assertIn("资产分类", headers)
         self.assertIn("资产类型", headers)
         self.assertIn("状态", headers)
+        self.assertNotIn("部门", headers)
         self.assertNotIn("使用人", headers)
         self.assertNotIn("系统编码", headers)
-        self.assertEqual(len(headers), 19)
+        self.assertEqual(len(headers), 18)
 
     def test_import_separates_asset_classification_and_type(self):
         headers = ["资产分类", "资产类型", "品牌", "型号", "设备序列号", "数量"]
@@ -1308,10 +1359,16 @@ class ReportAssetDetailTests(TestCase):
         self.notebook = AssetCategory.objects.create(name="笔记本电脑", code="NB")
         self.location = Location.objects.create(name="IT 库房", code="IT-WH", kind="warehouse")
         self.department = Department.objects.create(name="人力资源部", code="HR")
+        self.owner = User.objects.create_user("report_owner", password="pass")
+        EmployeeProfile.objects.create(
+            user=self.owner,
+            employee_no="REPORT-001",
+            department=self.department,
+        )
         self.asset = Asset.objects.create(
             asset_tag="IT-UC-2026-001",
             category=self.uncategorized,
-            custodian_department=self.department,
+            assigned_to=self.owner,
             custom_data={"import_warnings": ["缺少资产类型", "责任人待确认"]},
         )
 
@@ -1363,19 +1420,18 @@ class ReportAssetDetailTests(TestCase):
         self.assertNotIn("import_warnings", self.asset.custom_data)
         self.assertEqual(self.asset.events.count(), 4)
 
-    def test_department_detail_supports_batch_assignment(self):
+    def test_department_detail_rejects_batch_assignment(self):
         target = Department.objects.create(name="行政部", code="ADMIN")
         response = self.client.post(
             "/api/v1/reports/assets/",
             {"kind": "department", "asset_ids": [self.asset.id], "department_id": target.id},
             format="json",
         )
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("责任人自动确定", response.data["message"])
         self.asset.refresh_from_db()
-        self.assertEqual(self.asset.custodian_department, target)
-        event = self.asset.events.get()
-        self.assertEqual(event.metadata["from_department"], "人力资源部")
-        self.assertEqual(event.metadata["to_department"], "行政部")
+        self.assertEqual(self.asset.custodian_department, self.department)
+        self.assertFalse(self.asset.events.exists())
 
 
 class AssetRequestWorkflowTests(TestCase):
