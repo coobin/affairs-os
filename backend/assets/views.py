@@ -57,10 +57,12 @@ from .models import (
     InventoryTransaction,
     Location,
     ModuleToggle,
+    Office,
     OperationLog,
     PurchaseOrder,
     PurchaseRequest,
     Supplier,
+    SupplierAttachment,
     StocktakeRecord,
     StocktakeTask,
     Vehicle,
@@ -107,11 +109,13 @@ from .serializers import (
     LocationSerializer,
     LoginSerializer,
     OperationLogSerializer,
+    OfficeSerializer,
     StocktakeTaskSerializer,
     ExpenseCategorySerializer,
     PurchaseOrderSerializer,
     PurchaseRequestSerializer,
     SupplierSerializer,
+    SupplierAttachmentSerializer,
     UserOptionSerializer,
     VehicleDispatchSerializer,
     VehicleExpenseSerializer,
@@ -136,6 +140,8 @@ CONTRACT_FILE_EXTENSIONS = {
 }
 ASSET_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 CONTRACT_FILE_MAX_BYTES = 100 * 1024 * 1024
+SUPPLIER_FILE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+SUPPLIER_FILE_MAX_BYTES = 20 * 1024 * 1024
 
 
 def _safe_path_part(value):
@@ -619,15 +625,10 @@ class DashboardView(APIView):
             for row in queryset.values("status").annotate(total=Count("id"))
         }
         today = timezone.localdate()
-        warranty_due = queryset.filter(
-            warranty_expires_at__gte=today,
-            warranty_expires_at__lte=today + timedelta(days=90),
-        ).count()
         overdue = queryset.filter(
             status=Asset.Status.LOANED,
             expected_return_at__lt=today,
         ).count()
-        attention = queryset.filter(status=Asset.Status.DISPOSED).count()
         recent_events = AssetEvent.objects.select_related("asset", "actor") if user_can_manage(request.user, "assets") else AssetEvent.objects.none()
         status_options = AssetStatus.objects.filter(
             Q(is_active=True) | Q(code__in=status_counts.keys())
@@ -639,8 +640,15 @@ class DashboardView(APIView):
                 Contract.objects.filter(
                     status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
                     end_date__lte=today + timedelta(days=30),
+                    renewal_contracts__isnull=True,
+                    supplement_of__isnull=True,
                 ),
-            )
+            ).distinct()
+        vehicle_insurance_due = Vehicle.objects.none()
+        if user_can_manage(request.user, "vehicles"):
+            vehicle_insurance_due = Vehicle.objects.filter(
+                insurance_expires_at__lte=today + timedelta(days=30),
+            ).exclude(status=Vehicle.Status.RETIRED)
         return Response(
             {
                 "summary": {
@@ -648,16 +656,13 @@ class DashboardView(APIView):
                     "available": status_counts.get(Asset.Status.AVAILABLE, 0),
                     "assigned": status_counts.get(Asset.Status.ASSIGNED, 0)
                     + status_counts.get(Asset.Status.LOANED, 0),
-                    "attention": attention,
                 },
                 "tasks": {
-                    "warranty_due": warranty_due,
                     "overdue_loans": overdue,
-                    "attention": attention,
                 },
                 "admin_tasks": {
                     "pending_vehicle_dispatches": VehicleDispatch.objects.filter(status=VehicleDispatch.Status.PENDING).count() if user_can_manage(request.user, "vehicles") else 0,
-                    "due_vehicle_documents": Vehicle.objects.filter(Q(insurance_expires_at__lte=today + timedelta(days=30)) | Q(inspection_expires_at__lte=today + timedelta(days=30))).exclude(status=Vehicle.Status.RETIRED).count() if user_can_manage(request.user, "vehicles") else 0,
+                    "vehicle_insurance_due": vehicle_insurance_due.count(),
                     "pending_purchase_requests": PurchaseRequest.objects.filter(status=PurchaseRequest.Status.PENDING).count() if user_can_manage(request.user, "procurement") else 0,
                     "expiring_contracts": expiring_contracts.count(),
                 },
@@ -1669,8 +1674,124 @@ class ContractTypeViewSet(NoDeleteViewSet):
 
 
 class SupplierViewSet(NoDeleteViewSet):
-    management_module = "procurement"
+    management_module = "suppliers"
     serializer_class = SupplierSerializer
+
+    def get_permissions(self):
+        if self.action in {"list", "retrieve"} or (
+            self.action in {"files", "file_content"} and self.request.method == "GET"
+        ):
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        queryset = Supplier.objects.prefetch_related("attachments__uploaded_by")
+        if not any(user_can_manage(self.request.user, scope) for scope in ("suppliers", "procurement", "vehicles", "expenses", "contracts", "offices")):
+            return queryset.none()
+        query = self.request.query_params.get("q", "").strip()
+        active = self.request.query_params.get("active", "").strip().lower()
+        license_status = self.request.query_params.get("business_license_status", "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(code__icontains=query)
+                | Q(name__icontains=query)
+                | Q(category__icontains=query)
+                | Q(business_scope__icontains=query)
+                | Q(contact_name__icontains=query)
+            )
+        if active in {"1", "true", "yes"}:
+            queryset = queryset.filter(is_active=True)
+        elif active in {"0", "false", "no"}:
+            queryset = queryset.filter(is_active=False)
+        if license_status in dict(Supplier._meta.get_field("business_license_status").choices):
+            queryset = queryset.filter(business_license_status=license_status)
+        return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        if not is_hidden_superuser(request.user):
+            raise MethodNotAllowed("DELETE", detail="供应商不能直接删除，请改为停用。")
+        supplier = self.get_object()
+        try:
+            for attachment in supplier.attachments.all():
+                nextcloud_storage.delete(attachment.remote_path)
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+        try:
+            supplier.delete()
+        except ProtectedError:
+            return Response({"message": "该供应商仍被合同或业务记录引用，无法删除，请改为停用。"}, status=400)
+        return Response(status=204)
+
+    @action(detail=True, methods=["get", "post"], url_path="files", parser_classes=[MultiPartParser])
+    def files(self, request, pk=None):
+        supplier = self.get_object()
+        if request.method == "GET":
+            return Response(
+                SupplierAttachmentSerializer(
+                    supplier.attachments.select_related("uploaded_by"), many=True
+                ).data
+            )
+        if supplier.attachments.count() >= 20:
+            return Response({"message": "每家供应商最多保存 20 个证照文件。"}, status=400)
+        upload = request.FILES.get("file")
+        error = _validate_upload(
+            upload, SUPPLIER_FILE_EXTENSIONS, SUPPLIER_FILE_MAX_BYTES, "供应商证照"
+        )
+        if error:
+            return Response({"message": error}, status=400)
+        document_type = request.data.get(
+            "document_type", SupplierAttachment.DocumentType.BUSINESS_LICENSE
+        )
+        if document_type not in dict(SupplierAttachment.DocumentType.choices):
+            return Response({"message": "请选择正确的供应商文件类别。"}, status=400)
+        remote_path = _remote_file_path(
+            "suppliers", timezone.localdate().year, supplier.code, upload
+        )
+        try:
+            nextcloud_storage.upload(upload, remote_path)
+            try:
+                attachment = SupplierAttachment.objects.create(
+                    supplier=supplier,
+                    document_type=document_type,
+                    remote_path=remote_path,
+                    original_name=Path(upload.name).name[:255],
+                    content_type=(upload.content_type or "")[:120],
+                    size_bytes=upload.size,
+                    sha256=_file_sha256(upload),
+                    uploaded_by=request.user,
+                )
+                if document_type == SupplierAttachment.DocumentType.BUSINESS_LICENSE:
+                    supplier.business_license_status = "registered"
+                    supplier.save(update_fields=["business_license_status", "updated_at"])
+            except Exception:
+                nextcloud_storage.delete(remote_path)
+                raise
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+        return Response(SupplierAttachmentSerializer(attachment).data, status=201)
+
+    @action(detail=True, methods=["get", "delete"], url_path=r"files/(?P<file_id>\d+)")
+    def file_content(self, request, pk=None, file_id=None):
+        supplier = self.get_object()
+        attachment = supplier.attachments.filter(pk=file_id).first()
+        if not attachment:
+            return Response({"message": "没有找到这个供应商文件。"}, status=404)
+        if request.method == "GET":
+            try:
+                return _stream_remote_file(attachment, as_attachment=True)
+            except NextcloudStorageError as exc:
+                return Response({"message": str(exc)}, status=503)
+        try:
+            nextcloud_storage.delete(attachment.remote_path)
+        except NextcloudStorageError as exc:
+            return Response({"message": str(exc)}, status=503)
+        attachment.delete()
+        return Response(status=204)
+
+
+class OfficeViewSet(NoDeleteViewSet):
+    management_module = "offices"
+    serializer_class = OfficeSerializer
 
     def get_permissions(self):
         if self.action in {"list", "retrieve"}:
@@ -1678,13 +1799,25 @@ class SupplierViewSet(NoDeleteViewSet):
         return super().get_permissions()
 
     def get_queryset(self):
-        queryset = Supplier.objects.all()
-        if not any(user_can_manage(self.request.user, scope) for scope in ("procurement", "vehicles", "expenses", "contracts")):
+        queryset = Office.objects.prefetch_related("contracts__owner", "contracts__contract_type")
+        if not any(user_can_manage(self.request.user, scope) for scope in ("offices", "contracts")):
             return queryset.none()
         query = self.request.query_params.get("q", "").strip()
+        status_value = self.request.query_params.get("status", "").strip()
+        city = self.request.query_params.get("city", "").strip()
         if query:
-            queryset = queryset.filter(Q(code__icontains=query) | Q(name__icontains=query) | Q(contact_name__icontains=query))
-        return queryset
+            queryset = queryset.filter(
+                Q(code__icontains=query)
+                | Q(name__icontains=query)
+                | Q(city__icontains=query)
+                | Q(address__icontains=query)
+                | Q(responsible_name__icontains=query)
+            )
+        if status_value in dict(Office.Status.choices):
+            queryset = queryset.filter(status=status_value)
+        if city:
+            queryset = queryset.filter(city=city)
+        return queryset.distinct()
 
 
 class ContractViewSet(viewsets.ModelViewSet):
@@ -1700,7 +1833,7 @@ class ContractViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Contract.objects.select_related(
-            "contract_type", "supplier", "category", "department", "owner", "previous_contract", "supplement_of"
+            "contract_type", "supplier", "office", "category", "department", "owner", "previous_contract", "supplement_of"
         ).prefetch_related(
             "attachments__uploaded_by", "attachments__change", "changes__created_by", "renewal_contracts", "supplement_contracts"
         )
@@ -1712,6 +1845,8 @@ class ContractViewSet(viewsets.ModelViewSet):
         query = self.request.query_params.get("q", "").strip()
         status_value = self.request.query_params.get("status", "").strip()
         contract_type = self.request.query_params.get("contract_type", "").strip()
+        office = self.request.query_params.get("office", "").strip()
+        due = self.request.query_params.get("due", "").strip().lower()
         if query:
             queryset = queryset.filter(
                 Q(contract_no__icontains=query)
@@ -1724,6 +1859,13 @@ class ContractViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(status=status_value)
         if contract_type:
             queryset = queryset.filter(contract_type_id=contract_type)
+        if office:
+            queryset = queryset.filter(office_id=office)
+        if due in {"1", "true", "yes"}:
+            queryset = queryset.filter(
+                status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
+                end_date__lte=timezone.localdate() + timedelta(days=30),
+            )
         return queryset.distinct()
 
     def perform_create(self, serializer):
@@ -1821,6 +1963,7 @@ class ContractViewSet(viewsets.ModelViewSet):
                 name=f"{parent.name}（补充协议 {index}）",
                 contract_type=parent.contract_type,
                 supplier=parent.supplier,
+                office=parent.office,
                 category=parent.category,
                 department=parent.department,
                 owner=parent.owner,
@@ -1974,10 +2117,15 @@ class VehicleViewSet(viewsets.ModelViewSet):
         queryset = Vehicle.objects.select_related("department", "custodian")
         query = self.request.query_params.get("q", "").strip()
         status_value = self.request.query_params.get("status", "").strip()
+        insurance_due = self.request.query_params.get("insurance_due", "").strip().lower()
         if query:
-            queryset = queryset.filter(Q(plate_number__icontains=query) | Q(name__icontains=query) | Q(brand__icontains=query) | Q(model_name__icontains=query))
+            queryset = queryset.filter(Q(plate_number__icontains=query) | Q(name__icontains=query) | Q(brand__icontains=query) | Q(model_name__icontains=query) | Q(insurer_name__icontains=query) | Q(company__icontains=query))
         if status_value:
             queryset = queryset.filter(status=status_value)
+        if insurance_due in {"1", "true", "yes"}:
+            queryset = queryset.filter(
+                insurance_expires_at__lte=timezone.localdate() + timedelta(days=30),
+            ).exclude(status=Vehicle.Status.RETIRED)
         return queryset
 
     def destroy(self, request, *args, **kwargs):

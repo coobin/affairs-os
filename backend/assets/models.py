@@ -813,6 +813,12 @@ class Supplier(TimeStampedModel):
 
     code = models.CharField("供应商编码", max_length=32, unique=True)
     name = models.CharField("供应商名称", max_length=160)
+    category = models.CharField("供应商类别", max_length=120, blank=True)
+    brand_name = models.CharField("品牌名称", max_length=120, blank=True)
+    business_scope = models.TextField("业务范围", blank=True)
+    cooperation_status = models.CharField("合作状态", max_length=40, blank=True)
+    evaluation = models.CharField("合作评价", max_length=40, blank=True)
+    cooperation_started = models.CharField("拓展时间", max_length=40, blank=True)
     channel = models.CharField("采购途径", max_length=20, choices=Channel.choices, default=Channel.COOPERATIVE)
     contact_name = models.CharField("联系人", max_length=80, blank=True)
     contact_phone = models.CharField("联系电话", max_length=40, blank=True)
@@ -820,6 +826,17 @@ class Supplier(TimeStampedModel):
     tax_number = models.CharField("税号", max_length=80, blank=True)
     bank_account = models.CharField("银行账号", max_length=120, blank=True)
     address = models.CharField("地址", max_length=255, blank=True)
+    business_license_status = models.CharField(
+        "营业执照状态",
+        max_length=20,
+        choices=[
+            ("registered", "已登记"),
+            ("missing", "未登记"),
+            ("unknown", "未知"),
+        ],
+        default="unknown",
+    )
+    external_id = models.CharField("来源标识", max_length=120, blank=True, db_index=True)
     notes = models.TextField("备注", blank=True)
     is_active = models.BooleanField("启用", default=True)
 
@@ -830,6 +847,31 @@ class Supplier(TimeStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class SupplierAttachment(RemoteFileBase):
+    class DocumentType(models.TextChoices):
+        BUSINESS_LICENSE = "business_license", "营业执照"
+        QUALIFICATION = "qualification", "资质证照"
+        OTHER = "other", "其他"
+
+    supplier = models.ForeignKey(
+        Supplier,
+        verbose_name="供应商",
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    document_type = models.CharField(
+        "文件类别",
+        max_length=24,
+        choices=DocumentType.choices,
+        default=DocumentType.BUSINESS_LICENSE,
+    )
+
+    class Meta:
+        ordering = ["document_type", "-created_at"]
+        verbose_name = "供应商文件"
+        verbose_name_plural = "供应商文件"
 
 
 class ContractType(TimeStampedModel):
@@ -860,6 +902,82 @@ class ModuleToggle(TimeStampedModel):
         return f"{self.label}（{'启用' if self.is_enabled else '停用'}）"
 
 
+class Office(TimeStampedModel):
+    class Status(models.TextChoices):
+        ACTIVE = "active", "使用中"
+        PLANNED = "planned", "筹备中"
+        INACTIVE = "inactive", "暂停使用"
+        CLOSED = "closed", "已关闭"
+
+    code = models.CharField("办事处编码", max_length=32, unique=True)
+    name = models.CharField("办事处名称", max_length=160)
+    status = models.CharField(
+        "状态", max_length=16, choices=Status.choices, default=Status.ACTIVE, db_index=True
+    )
+    region = models.CharField("所属区域", max_length=80, blank=True)
+    city = models.CharField("城市", max_length=80, blank=True, db_index=True)
+    address = models.CharField("详细地址", max_length=500, blank=True)
+    room_layout = models.CharField("房型", max_length=120, blank=True)
+    area_sqm = models.DecimalField(
+        "面积（平方米）", max_digits=10, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    sales_project = models.CharField("销售项目归属", max_length=255, blank=True)
+    cost_attribution = models.CharField("费用归属明细", max_length=255, blank=True)
+    landlord_name = models.CharField("出租方", max_length=160, blank=True)
+    landlord_phone = models.CharField("出租方联系电话", max_length=80, blank=True)
+    intermediary_name = models.CharField("中介或机构", max_length=160, blank=True)
+    intermediary_phone = models.CharField("中介联系电话", max_length=80, blank=True)
+    intermediary_fee = models.DecimalField(
+        "中介费用", max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    intermediary_invoice_status = models.CharField("中介费开票状态", max_length=120, blank=True)
+    monthly_rent = models.DecimalField(
+        "月租金", max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    rent_description = models.TextField("租金说明", blank=True)
+    deposit = models.DecimalField(
+        "押金", max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    deposit_status = models.CharField("押金状态", max_length=160, blank=True)
+    payment_frequency = models.CharField("付款频率", max_length=80, blank=True)
+    payment_method = models.CharField("付款方式", max_length=120, blank=True)
+    payment_terms = models.TextField("付款要求", blank=True)
+    latest_payment_period = models.CharField("最近付款周期", max_length=160, blank=True)
+    paid_period_start = models.DateField("已付周期开始", null=True, blank=True)
+    paid_period_end = models.DateField("已付周期结束", null=True, blank=True)
+    latest_payment_date = models.DateField("最近付款日期", null=True, blank=True)
+    next_payment_date = models.DateField("下次付款日期", null=True, blank=True, db_index=True)
+    latest_payment_amount = models.DecimalField(
+        "最近付款金额", max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    responsible_name = models.CharField("现场负责人", max_length=80, blank=True)
+    responsible_phone = models.CharField("负责人联系电话", max_length=80, blank=True)
+    residents = models.TextField("居住人员", blank=True)
+    resident_count = models.PositiveSmallIntegerField("居住人数", null=True, blank=True)
+    renewal_status = models.TextField("续租情况", blank=True)
+    lease_summary = models.TextField("历次租赁期限", blank=True)
+    current_lease_period = models.CharField("本期租赁期限", max_length=160, blank=True)
+    lease_start = models.DateField("本期开始日期", null=True, blank=True)
+    lease_end = models.DateField("合同约定到期日", null=True, blank=True, db_index=True)
+    expected_move_out_date = models.DateField("预计退租日期", null=True, blank=True, db_index=True)
+    feedback = models.TextField("反馈事项", blank=True)
+    notes = models.TextField("备注", blank=True)
+    external_id = models.CharField("来源标识", max_length=120, blank=True, db_index=True)
+
+    class Meta:
+        ordering = ["region", "city", "code"]
+        verbose_name = "办事处"
+        verbose_name_plural = "办事处"
+
+    def __str__(self):
+        return f"{self.code} · {self.name}"
+
+
 class Contract(TimeStampedModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "草稿"
@@ -872,6 +990,7 @@ class Contract(TimeStampedModel):
     name = models.CharField("合同名称", max_length=180)
     contract_type = models.ForeignKey(ContractType, verbose_name="合同类型", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     supplier = models.ForeignKey(Supplier, verbose_name="供应商", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
+    office = models.ForeignKey(Office, verbose_name="办事处", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     category = models.ForeignKey(ExpenseCategory, verbose_name="费用类别", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     department = models.ForeignKey(Department, verbose_name="归属部门", null=True, blank=True, on_delete=models.PROTECT, related_name="contracts")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="负责人", null=True, blank=True, on_delete=models.SET_NULL, related_name="owned_admin_contracts")
@@ -879,6 +998,19 @@ class Contract(TimeStampedModel):
     start_date = models.DateField("开始日期", null=True, blank=True)
     end_date = models.DateField("结束日期", null=True, blank=True, db_index=True)
     amount = models.DecimalField("合同金额", max_digits=14, decimal_places=2, default=0, validators=[MinValueValidator(0)])
+    amount_description = models.TextField("费用金额说明", blank=True)
+    cooperation_duration = models.CharField("合作时长", max_length=120, blank=True)
+    cooperation_type = models.CharField("合作类型", max_length=120, blank=True)
+    party_a = models.CharField("签订甲方", max_length=180, blank=True)
+    party_a_contact = models.CharField("甲方联系人", max_length=160, blank=True)
+    party_a_address = models.CharField("甲方地址", max_length=500, blank=True)
+    party_b_contact = models.CharField("乙方联系人", max_length=160, blank=True)
+    party_b_address = models.CharField("乙方地址", max_length=500, blank=True)
+    payment_method = models.CharField("付款方式", max_length=160, blank=True)
+    payment_terms = models.TextField("付款要求", blank=True)
+    invoice_type = models.CharField("开票类型", max_length=80, blank=True)
+    invoice_tax_rate = models.CharField("开票税点", max_length=80, blank=True)
+    service_content = models.TextField("服务项目内容", blank=True)
     renewal_notice_days = models.PositiveSmallIntegerField("到期提醒天数", default=30)
     auto_renew = models.BooleanField("自动续签", default=False)
     previous_contract = models.ForeignKey("self", verbose_name="上一期合同", null=True, blank=True, on_delete=models.SET_NULL, related_name="renewal_contracts")
@@ -982,10 +1114,19 @@ class Vehicle(TimeStampedModel):
     department = models.ForeignKey(Department, verbose_name="管理部门", null=True, blank=True, on_delete=models.PROTECT, related_name="vehicles")
     custodian = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="车辆负责人", null=True, blank=True, on_delete=models.SET_NULL, related_name="managed_vehicles")
     purchase_date = models.DateField("购置日期", null=True, blank=True)
+    registration_date = models.DateField("初次登记日期", null=True, blank=True)
     purchase_cost = models.DecimalField("购置金额", max_digits=14, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)])
+    company = models.CharField("所属公司", max_length=120, blank=True)
+    use_scope = models.CharField("使用范围", max_length=255, blank=True)
+    insurance_started_at = models.DateField("保险开始日期", null=True, blank=True)
     current_mileage = models.PositiveIntegerField("当前里程（公里）", default=0)
     insurance_expires_at = models.DateField("保险到期", null=True, blank=True, db_index=True)
+    insurer_name = models.CharField("保险公司", max_length=120, blank=True)
     inspection_expires_at = models.DateField("年检到期", null=True, blank=True, db_index=True)
+    asset_card_code = models.CharField("资产卡片编码", max_length=80, blank=True)
+    asset_number = models.CharField("资产编号", max_length=80, blank=True)
+    handler_name = models.CharField("经手人", max_length=80, blank=True)
+    supervisor_name = models.CharField("监管人", max_length=80, blank=True)
     notes = models.TextField("备注", blank=True)
 
     class Meta:

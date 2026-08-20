@@ -18,12 +18,14 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    Office,
     OperationLog,
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseRequest,
     PurchaseRequestItem,
     Supplier,
+    SupplierAttachment,
     StocktakeRecord,
     StocktakeTask,
     Vehicle,
@@ -77,6 +79,8 @@ admin.site.register(AssetManagerRole)
 admin.site.register(AssetRequest)
 admin.site.register(ExpenseCategory)
 admin.site.register(Supplier)
+admin.site.register(SupplierAttachment)
+admin.site.register(Office)
 admin.site.register(Contract)
 admin.site.register(ContractType)
 admin.site.register(ContractChange)

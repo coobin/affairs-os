@@ -37,10 +37,12 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    Office,
     OperationLog,
     PurchaseOrder,
     PurchaseRequest,
     Supplier,
+    SupplierAttachment,
     StocktakeRecord,
     StocktakeTask,
     Vehicle,
@@ -282,7 +284,9 @@ class AssetApiTests(TestCase):
         response = self.client.get("/api/v1/dashboard/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["summary"]["total"], 1)
-        self.assertEqual(response.data["tasks"]["warranty_due"], 1)
+        self.assertNotIn("warranty_due", response.data["tasks"])
+        self.assertNotIn("attention", response.data["tasks"])
+        self.assertNotIn("attention", response.data["summary"])
 
     def test_overdue_dashboard_count_matches_overdue_asset_list(self):
         overdue = Asset.objects.create(
@@ -2855,6 +2859,69 @@ class AdministrativePhaseTests(TestCase):
         self.assertEqual([row["contract_no"] for row in searched.data], ["SEARCH-001"])
         filtered = self.client.get(f"/api/v1/contracts/?contract_type={lease_type.id}")
         self.assertEqual([row["contract_no"] for row in filtered.data], ["SEARCH-002"])
+
+    def test_dashboard_due_counts_match_filtered_contracts_and_vehicle_insurance(self):
+        self.client.force_authenticate(self.admin)
+        Contract.objects.create(
+            contract_no="DUE-001", name="近期合同", owner=self.employee,
+            status=Contract.Status.ACTIVE, end_date=timezone.localdate() + timedelta(days=10),
+        )
+        Contract.objects.create(
+            contract_no="DONE-001", name="历史合同", owner=self.employee,
+            status=Contract.Status.COMPLETED, end_date=timezone.localdate() - timedelta(days=10),
+        )
+        due_vehicle = Vehicle.objects.create(
+            plate_number="粤BDUE01", name="保险待办车辆",
+            insurance_expires_at=timezone.localdate() + timedelta(days=5),
+        )
+        Vehicle.objects.create(
+            plate_number="粤BRET01", name="已处置车辆", status=Vehicle.Status.RETIRED,
+            insurance_expires_at=timezone.localdate() - timedelta(days=5),
+        )
+
+        dashboard = self.client.get("/api/v1/dashboard/")
+        contracts = self.client.get("/api/v1/contracts/?due=1")
+        vehicles = self.client.get("/api/v1/vehicles/?insurance_due=1")
+
+        self.assertEqual(dashboard.data["admin_tasks"]["expiring_contracts"], len(contracts.data))
+        self.assertEqual(dashboard.data["admin_tasks"]["vehicle_insurance_due"], len(vehicles.data))
+        self.assertEqual([row["contract_no"] for row in contracts.data], ["DUE-001"])
+        self.assertEqual([row["id"] for row in vehicles.data], [due_vehicle.id])
+
+    @patch("assets.views.nextcloud_storage.upload")
+    def test_supplier_license_upload_marks_license_registered(self, storage_upload):
+        self.client.force_authenticate(self.admin)
+        supplier = Supplier.objects.create(code="SUP-LICENSE", name="证照供应商")
+        upload = SimpleUploadedFile("营业执照.png", b"png-data", content_type="image/png")
+
+        response = self.client.post(
+            f"/api/v1/suppliers/{supplier.id}/files/",
+            {"file": upload, "document_type": "business_license"},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(SupplierAttachment.objects.filter(supplier=supplier).exists())
+        supplier.refresh_from_db()
+        self.assertEqual(supplier.business_license_status, "registered")
+        storage_upload.assert_called_once()
+
+    def test_office_manager_only_sees_owned_contracts_in_office_detail(self):
+        other = User.objects.create_user("office-other", password="pass")
+        AssetManagerRole.objects.create(user=self.employee, scopes=["offices"])
+        office = Office.objects.create(code="OFFICE-T01", name="测试办事处")
+        own = Contract.objects.create(
+            contract_no="OFFICE-OWN", name="本人租约", office=office, owner=self.employee,
+        )
+        Contract.objects.create(
+            contract_no="OFFICE-OTHER", name="他人租约", office=office, owner=other,
+        )
+        self.client.force_authenticate(self.employee)
+
+        response = self.client.get(f"/api/v1/offices/{office.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data["contracts"]], [own.id])
 
     def test_daily_task_marks_unhandled_contract_expired_without_email(self):
         contract = Contract.objects.create(

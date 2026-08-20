@@ -9,7 +9,9 @@ MANAGEMENT_MODULES = (
     ("vehicles", "车辆管理"),
     ("expenses", "费用台账"),
     ("procurement", "采购管理"),
+    ("suppliers", "供应商管理"),
     ("contracts", "合同管理"),
+    ("offices", "办事处管理"),
     ("reports", "报表"),
     ("settings", "设置"),
 )

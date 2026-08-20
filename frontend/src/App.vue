@@ -16,10 +16,12 @@ import VehiclesView from "./views/VehiclesView.vue";
 import ExpensesView from "./views/ExpensesView.vue";
 import ProcurementView from "./views/ProcurementView.vue";
 import ContractsView from "./views/ContractsView.vue";
+import OfficesView from "./views/OfficesView.vue";
 import PlaceholderView from "./views/PlaceholderView.vue";
 import ReportsView from "./views/ReportsView.vue";
 import RequestsView from "./views/RequestsView.vue";
 import SettingsView from "./views/SettingsView.vue";
+import SuppliersView from "./views/SuppliersView.vue";
 
 const user = ref<User | null>(getStoredUser());
 const path = ref(`${window.location.pathname}${window.location.search}`);
@@ -43,6 +45,8 @@ const navItems = computed(() => [
   ...(hasScope("inventory") && moduleEnabled("inventory") ? [{ path: "/inventory", label: "库存", icon: "inventory" }] : []),
   ...(hasScope("expenses") && moduleEnabled("expenses") ? [{ path: "/expenses", label: "费用", icon: "chart" }] : []),
   ...(hasScope("contracts") && moduleEnabled("contracts") ? [{ path: "/contracts", label: "合同", icon: "request" }] : []),
+  ...(hasScope("suppliers") && moduleEnabled("suppliers") ? [{ path: "/suppliers", label: "供应商", icon: "inventory" }] : []),
+  ...(hasScope("offices") && moduleEnabled("offices") ? [{ path: "/offices", label: "办事处", icon: "map" }] : []),
   ...(hasScope("reports") && moduleEnabled("reports") ? [{ path: "/reports", label: "报表", icon: "chart" }] : []),
   ...(hasScope("settings") && moduleEnabled("settings") ? [{ path: "/settings", label: "设置", icon: "settings" }] : []),
 ]);
@@ -54,6 +58,8 @@ const route = computed<{ name: string; id?: number; section?: string }>(() => {
   if (currentPath === "/procurement") return { name: "procurement" };
   if (currentPath === "/expenses" && hasScope("expenses")) return { name: "expenses" };
   if (currentPath === "/contracts" && hasScope("contracts")) return { name: "contracts" };
+  if (currentPath === "/suppliers" && hasScope("suppliers")) return { name: "suppliers" };
+  if (currentPath === "/offices" && hasScope("offices")) return { name: "offices" };
   if (currentPath === "/" && user.value?.management_scopes?.length) return { name: "dashboard" };
   if (currentPath === "/assets" && hasScope("assets")) return { name: "assets" };
   if (currentPath === "/assets/new" && hasScope("assets")) return { name: "asset-new" };
@@ -199,6 +205,8 @@ onUnmounted(() => {
       <ProcurementView v-else-if="route.name === 'procurement'" :can-manage="hasScope('procurement')" />
       <ExpensesView v-else-if="route.name === 'expenses'" :lookups="lookups" />
       <ContractsView v-else-if="route.name === 'contracts'" :lookups="lookups" :is-superuser="user.is_superuser" />
+      <SuppliersView v-else-if="route.name === 'suppliers'" :is-superuser="user.is_superuser" />
+      <OfficesView v-else-if="route.name === 'offices'" :is-superuser="user.is_superuser" />
       <AssetsView
         v-else-if="route.name === 'assets'"
         :key="path"

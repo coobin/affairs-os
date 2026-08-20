@@ -26,12 +26,14 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    Office,
     OperationLog,
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseRequest,
     PurchaseRequestItem,
     Supplier,
+    SupplierAttachment,
     StocktakeRecord,
     StocktakeTask,
     Vehicle,
@@ -748,12 +750,86 @@ class ExpenseCategorySerializer(serializers.ModelSerializer):
         fields = ("id", "name", "code", "budget_code", "is_active")
 
 
+class SupplierAttachmentSerializer(serializers.ModelSerializer):
+    document_type_label = serializers.CharField(source="get_document_type_display", read_only=True)
+    uploaded_by_name = serializers.SerializerMethodField()
+    content_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupplierAttachment
+        fields = (
+            "id", "document_type", "document_type_label", "original_name",
+            "content_type", "size_bytes", "sha256", "uploaded_by_name",
+            "content_url", "created_at",
+        )
+
+    def get_uploaded_by_name(self, obj):
+        if not obj.uploaded_by:
+            return "系统"
+        return obj.uploaded_by.get_full_name() or obj.uploaded_by.username
+
+    def get_content_url(self, obj):
+        return f"/suppliers/{obj.supplier_id}/files/{obj.id}/"
+
+
 class SupplierSerializer(serializers.ModelSerializer):
     channel_label = serializers.CharField(source="get_channel_display", read_only=True)
+    business_license_status_label = serializers.CharField(
+        source="get_business_license_status_display", read_only=True
+    )
+    files = SupplierAttachmentSerializer(source="attachments", many=True, read_only=True)
 
     class Meta:
         model = Supplier
-        fields = ("id", "code", "name", "channel", "channel_label", "contact_name", "contact_phone", "contact_email", "tax_number", "bank_account", "address", "notes", "is_active", "created_at", "updated_at")
+        fields = (
+            "id", "code", "name", "category", "brand_name", "business_scope",
+            "cooperation_status", "evaluation", "cooperation_started", "channel",
+            "channel_label", "contact_name", "contact_phone", "contact_email",
+            "tax_number", "bank_account", "address", "business_license_status",
+            "business_license_status_label", "external_id", "notes", "is_active",
+            "files", "created_at", "updated_at",
+        )
+
+
+class OfficeSerializer(serializers.ModelSerializer):
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    contracts = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Office
+        fields = (
+            "id", "code", "name", "status", "status_label", "region", "city",
+            "address", "room_layout", "area_sqm", "sales_project", "cost_attribution",
+            "landlord_name", "landlord_phone", "intermediary_name", "intermediary_phone",
+            "intermediary_fee", "intermediary_invoice_status", "monthly_rent",
+            "rent_description", "deposit", "deposit_status", "payment_frequency",
+            "payment_method", "payment_terms", "latest_payment_period", "paid_period_start",
+            "paid_period_end", "latest_payment_date", "next_payment_date",
+            "latest_payment_amount", "responsible_name", "responsible_phone", "residents",
+            "resident_count", "renewal_status", "lease_summary", "current_lease_period",
+            "lease_start", "lease_end", "expected_move_out_date", "feedback", "notes",
+            "external_id", "contracts", "created_at", "updated_at",
+        )
+
+    def get_contracts(self, obj):
+        queryset = obj.contracts.select_related("owner", "contract_type").all()
+        request = self.context.get("request")
+        if request and not is_hidden_superuser(request.user):
+            queryset = queryset.filter(owner=request.user)
+        return [
+            {
+                "id": item.id,
+                "contract_no": item.contract_no,
+                "name": item.name,
+                "contract_type_name": item.contract_type.name if item.contract_type else "",
+                "status": item.status,
+                "status_label": item.get_status_display(),
+                "start_date": item.start_date,
+                "end_date": item.end_date,
+                "owner_name": (item.owner.get_full_name() or item.owner.username) if item.owner else "",
+            }
+            for item in queryset
+        ]
 
 
 class ContractTypeSerializer(serializers.ModelSerializer):
@@ -765,6 +841,7 @@ class ContractTypeSerializer(serializers.ModelSerializer):
 class ContractSerializer(serializers.ModelSerializer):
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     supplier_name = serializers.CharField(source="supplier.name", read_only=True, default="")
+    office_name = serializers.CharField(source="office.name", read_only=True, default="")
     contract_type_name = serializers.CharField(source="contract_type.name", read_only=True, default="")
     category_name = serializers.CharField(source="category.name", read_only=True, default="")
     department_name = serializers.CharField(source="department.name", read_only=True, default="")
@@ -781,7 +858,7 @@ class ContractSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Contract
-        fields = ("id", "contract_no", "name", "contract_type", "contract_type_name", "supplier", "supplier_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "total_amount", "renewal_notice_days", "auto_renew", "previous_contract", "previous_contract_no", "renewal_contracts", "supplement_of", "supplement_of_no", "supplement_contracts", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "changes", "created_at", "updated_at")
+        fields = ("id", "contract_no", "name", "contract_type", "contract_type_name", "supplier", "supplier_name", "office", "office_name", "category", "category_name", "department", "department_name", "owner", "owner_name", "status", "status_label", "start_date", "end_date", "amount", "total_amount", "amount_description", "cooperation_duration", "cooperation_type", "party_a", "party_a_contact", "party_a_address", "party_b_contact", "party_b_address", "payment_method", "payment_terms", "invoice_type", "invoice_tax_rate", "service_content", "renewal_notice_days", "auto_renew", "previous_contract", "previous_contract_no", "renewal_contracts", "supplement_of", "supplement_of_no", "supplement_contracts", "kingdee_code", "external_id", "notes", "days_to_expiry", "attachments", "changes", "created_at", "updated_at")
         read_only_fields = ("previous_contract",)
 
     def get_owner_name(self, obj):
@@ -950,7 +1027,7 @@ class VehicleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Vehicle
-        fields = ("id", "plate_number", "name", "brand", "model_name", "vin", "engine_number", "energy_type", "energy_type_label", "seats", "status", "status_label", "department", "department_name", "custodian", "custodian_name", "purchase_date", "purchase_cost", "current_mileage", "insurance_expires_at", "inspection_expires_at", "notes", "created_at", "updated_at")
+        fields = ("id", "plate_number", "name", "brand", "model_name", "vin", "engine_number", "energy_type", "energy_type_label", "seats", "status", "status_label", "department", "department_name", "custodian", "custodian_name", "purchase_date", "registration_date", "purchase_cost", "company", "use_scope", "insurance_started_at", "current_mileage", "insurance_expires_at", "insurer_name", "inspection_expires_at", "asset_card_code", "asset_number", "handler_name", "supervisor_name", "notes", "created_at", "updated_at")
 
     def get_custodian_name(self, obj):
         return (obj.custodian.get_full_name() or obj.custodian.username) if obj.custodian else ""

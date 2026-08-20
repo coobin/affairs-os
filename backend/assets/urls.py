@@ -22,6 +22,7 @@ from .views import (
     ManagerSettingsView,
     MeView,
     ModuleSettingsView,
+    OfficeViewSet,
     OperationLogView,
     OIDCCallbackView,
     OIDCCompleteView,
@@ -48,6 +49,7 @@ router.register("asset-statuses", AssetStatusViewSet, basename="asset-status")
 router.register("expense-categories", ExpenseCategoryViewSet, basename="expense-category")
 router.register("contract-types", ContractTypeViewSet, basename="contract-type")
 router.register("suppliers", SupplierViewSet, basename="supplier")
+router.register("offices", OfficeViewSet, basename="office")
 router.register("contracts", ContractViewSet, basename="contract")
 router.register("vehicles", VehicleViewSet, basename="vehicle")
 router.register("vehicle-dispatches", VehicleDispatchViewSet, basename="vehicle-dispatch")

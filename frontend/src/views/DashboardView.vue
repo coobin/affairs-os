@@ -5,7 +5,7 @@ import { api } from "../api";
 import AppIcon from "../components/AppIcon.vue";
 import type { Dashboard } from "../types";
 
-defineProps<{ scopes: string[] }>();
+const props = defineProps<{ scopes: string[] }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 const data = ref<Dashboard | null>(null);
 const loading = ref(true);
@@ -18,6 +18,39 @@ const dateLabel = computed(() =>
     weekday: "long",
   }).format(new Date()),
 );
+
+const taskItems = computed(() => {
+  if (!data.value) return [];
+  const items: Array<{ label: string; hint: string; count: number; path: string; hot?: boolean }> = [];
+  if (props.scopes.includes("assets")) {
+    items.push({
+      label: "借用已经超期",
+      hint: "需要联系借用人归还",
+      count: data.value.tasks.overdue_loans,
+      path: "/assets?status=loaned&overdue=1",
+      hot: true,
+    });
+  }
+  if (props.scopes.includes("contracts")) {
+    items.push({
+      label: "合同即将到期",
+      hint: "未来 30 天或已到期",
+      count: data.value.admin_tasks.expiring_contracts,
+      path: "/contracts?due=1",
+    });
+  }
+  if (props.scopes.includes("vehicles")) {
+    items.push({
+      label: "车辆保险到期",
+      hint: "未来 30 天或已到期",
+      count: data.value.admin_tasks.vehicle_insurance_due,
+      path: "/vehicles?tab=vehicles&insurance_due=1",
+    });
+  }
+  return items;
+});
+
+const taskTotal = computed(() => taskItems.value.reduce((total, item) => total + item.count, 0));
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -60,8 +93,12 @@ onMounted(async () => {
     <div v-else-if="error" class="error-block">{{ error }}</div>
 
     <template v-else-if="data">
-      <section v-if="scopes.includes('assets')" class="workbench">
-        <div class="ledger-summary">
+      <section
+        v-if="taskItems.length"
+        class="workbench"
+        :style="scopes.includes('assets') ? undefined : { gridTemplateColumns: '1fr' }"
+      >
+        <div v-if="scopes.includes('assets')" class="ledger-summary">
           <div class="summary-heading">
             <p class="eyebrow">资产总览</p>
             <strong class="big-number">{{ data.summary.total }}</strong>
@@ -76,10 +113,6 @@ onMounted(async () => {
               <span><i class="signal available"></i>在库</span>
               <strong>{{ data.summary.available }}</strong>
             </button>
-            <button @click="emit('navigate', '/assets?status=disposed')">
-              <span><i class="signal attention"></i>需要关注</span>
-              <strong>{{ data.summary.attention }}</strong>
-            </button>
           </div>
         </div>
 
@@ -89,25 +122,13 @@ onMounted(async () => {
               <p class="eyebrow">待办事项</p>
               <h2>需要你处理</h2>
             </div>
-            <span>{{ data.tasks.warranty_due + data.tasks.overdue_loans + data.tasks.attention }} 项</span>
+            <span>{{ taskTotal }} 项</span>
           </div>
 
-          <button class="task-row" @click="emit('navigate', '/assets')">
-            <span class="task-index">01</span>
-            <span class="task-copy"><strong>保修即将到期</strong><small>未来 90 天内到期</small></span>
-            <strong class="task-count">{{ data.tasks.warranty_due }}</strong>
-            <AppIcon name="chevron-right" :size="18" />
-          </button>
-          <button class="task-row" @click="emit('navigate', '/assets?status=loaned&overdue=1')">
-            <span class="task-index">02</span>
-            <span class="task-copy"><strong>借用已经超期</strong><small>需要联系借用人归还</small></span>
-            <strong class="task-count hot">{{ data.tasks.overdue_loans }}</strong>
-            <AppIcon name="chevron-right" :size="18" />
-          </button>
-          <button class="task-row" @click="emit('navigate', '/assets?status=disposed')">
-            <span class="task-index">03</span>
-            <span class="task-copy"><strong>已报废资产</strong><small>保留历史记录，不再参与领用</small></span>
-            <strong class="task-count">{{ data.tasks.attention }}</strong>
+          <button v-for="(item, index) in taskItems" :key="item.path" class="task-row" @click="emit('navigate', item.path)">
+            <span class="task-index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="task-copy"><strong>{{ item.label }}</strong><small>{{ item.hint }}</small></span>
+            <strong class="task-count" :class="{ hot: item.hot }">{{ item.count }}</strong>
             <AppIcon name="chevron-right" :size="18" />
           </button>
         </div>
@@ -115,9 +136,7 @@ onMounted(async () => {
 
       <section class="admin-todo-grid">
         <button v-if="scopes.includes('vehicles')" @click="emit('navigate','/vehicles')"><span>派车待审批</span><strong>{{ data.admin_tasks.pending_vehicle_dispatches }}</strong><small>查看用车申请</small></button>
-        <button v-if="scopes.includes('vehicles')" @click="emit('navigate','/vehicles')"><span>车辆证照到期</span><strong>{{ data.admin_tasks.due_vehicle_documents }}</strong><small>未来 30 天或已到期</small></button>
         <button v-if="scopes.includes('procurement')" @click="emit('navigate','/procurement')"><span>采购待审批</span><strong>{{ data.admin_tasks.pending_purchase_requests }}</strong><small>查看采购申请</small></button>
-        <button v-if="scopes.includes('contracts')" @click="emit('navigate','/contracts')"><span>合同即将到期</span><strong>{{ data.admin_tasks.expiring_contracts }}</strong><small>未来 30 天或已到期</small></button>
       </section>
 
       <section v-if="scopes.includes('assets')" class="dashboard-lower">

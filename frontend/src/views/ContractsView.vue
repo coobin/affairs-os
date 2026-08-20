@@ -11,10 +11,17 @@ const rows = ref<Contract[]>([]);
 const suppliers = ref<Supplier[]>([]);
 const categories = ref<ExpenseCategory[]>([]);
 const contractTypes = ref<ContractType[]>([]);
+const offices = ref<{ id: number; code: string; name: string }[]>([]);
 const error = ref("");
 const formError = ref("");
 const loading = ref(false);
-const filters = reactive({ q: "", contract_type: "", status: "" });
+const initialParams = new URLSearchParams(window.location.search);
+const filters = reactive({
+  q: initialParams.get("q") || "",
+  contract_type: initialParams.get("contract_type") || "",
+  status: initialParams.get("status") || "",
+});
+const dueOnly = ref(initialParams.get("due") === "1");
 
 const showForm = ref(false);
 const formMode = ref<"create" | "edit" | "renew">("create");
@@ -34,16 +41,16 @@ const documentType = ref("signed");
 const fileChange = ref("");
 
 const form = reactive({
-  contract_no: "", name: "", contract_type: "", supplier: "", category: "", department: "", owner: "",
-  status: "draft", start_date: "", end_date: "", amount: "", renewal_notice_days: 30,
-  auto_renew: false, kingdee_code: "", external_id: "", notes: "",
+  contract_no: "", name: "", contract_type: "", supplier: "", office: "", category: "", department: "", owner: "",
+  status: "draft", start_date: "", end_date: "", amount: "", amount_description: "", renewal_notice_days: 30,
+  auto_renew: false, payment_method: "", payment_terms: "", service_content: "", kingdee_code: "", external_id: "", notes: "",
 });
 const changeForm = reactive({
   change_type: "extension", changed_on: new Date().toISOString().slice(0, 10),
   new_start_date: "", new_end_date: "", new_amount: "", notes: "",
 });
 
-const due = computed(() => rows.value.filter((item) =>
+const due = computed(() => dueOnly.value ? rows.value : rows.value.filter((item) =>
   ["active", "expired"].includes(item.status)
   && item.days_to_expiry !== null
   && item.days_to_expiry <= item.renewal_notice_days,
@@ -71,6 +78,7 @@ function queryPath() {
   if (filters.q.trim()) params.set("q", filters.q.trim());
   if (filters.contract_type) params.set("contract_type", filters.contract_type);
   if (filters.status) params.set("status", filters.status);
+  if (dueOnly.value) params.set("due", "1");
   const query = params.toString();
   return `/contracts/${query ? `?${query}` : ""}`;
 }
@@ -79,9 +87,10 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    [rows.value, suppliers.value, categories.value, contractTypes.value] = await Promise.all([
+    [rows.value, suppliers.value, categories.value, contractTypes.value, offices.value] = await Promise.all([
       api<Contract[]>(queryPath()), api<Supplier[]>("/suppliers/"),
       api<ExpenseCategory[]>("/expense-categories/"), api<ContractType[]>("/contract-types/"),
+      api<{ id: number; code: string; name: string }[]>("/offices/"),
     ]);
     const refresh = (current: Contract | null) => rows.value.find((item) => item.id === current?.id) || null;
     if (selectedContract.value) selectedContract.value = refresh(selectedContract.value);
@@ -94,6 +103,8 @@ async function load() {
 
 function clearFilters() {
   Object.assign(filters, { q: "", contract_type: "", status: "" });
+  dueOnly.value = false;
+  window.history.replaceState({}, "", "/contracts");
   void load();
 }
 
@@ -110,14 +121,15 @@ function errorText(err: unknown, fallback: string) {
 function assignForm(item?: Contract) {
   Object.assign(form, item ? {
     contract_no: item.contract_no, name: item.name, contract_type: item.contract_type || "",
-    supplier: item.supplier || "", category: item.category || "", department: item.department || "", owner: item.owner || "",
-    status: item.status, start_date: item.start_date || "", end_date: item.end_date || "", amount: item.amount,
+    supplier: item.supplier || "", office: item.office || "", category: item.category || "", department: item.department || "", owner: item.owner || "",
+    status: item.status, start_date: item.start_date || "", end_date: item.end_date || "", amount: item.amount, amount_description: item.amount_description || "",
     renewal_notice_days: item.renewal_notice_days, auto_renew: item.auto_renew,
+    payment_method: item.payment_method || "", payment_terms: item.payment_terms || "", service_content: item.service_content || "",
     kingdee_code: item.kingdee_code, external_id: item.external_id, notes: item.notes,
   } : {
-    contract_no: "", name: "", contract_type: "", supplier: "", category: "", department: "", owner: "",
-    status: "draft", start_date: "", end_date: "", amount: "", renewal_notice_days: 30,
-    auto_renew: false, kingdee_code: "", external_id: "", notes: "",
+    contract_no: "", name: "", contract_type: "", supplier: "", office: "", category: "", department: "", owner: "",
+    status: "draft", start_date: "", end_date: "", amount: "", amount_description: "", renewal_notice_days: 30,
+    auto_renew: false, payment_method: "", payment_terms: "", service_content: "", kingdee_code: "", external_id: "", notes: "",
   });
 }
 
@@ -147,6 +159,7 @@ async function saveContract() {
     ...formFields,
     contract_type: form.contract_type ? Number(form.contract_type) : null,
     supplier: form.supplier ? Number(form.supplier) : null,
+    office: form.office ? Number(form.office) : null,
     category: form.category ? Number(form.category) : null,
     department: form.department ? Number(form.department) : null,
     ...(props.isSuperuser ? { owner: owner ? Number(owner) : null } : {}),
@@ -296,7 +309,7 @@ onMounted(load);
       <select v-model="filters.contract_type" @change="load"><option value="">全部合同类型</option><option v-for="item in contractTypes.filter((x) => x.is_active)" :key="item.id" :value="item.id">{{ item.name }}</option></select>
       <select v-model="filters.status" @change="load"><option value="">全部状态</option><option value="draft">草稿</option><option value="active">履行中</option><option value="expired">已到期未处理</option><option value="completed">已完成</option><option value="terminated">已终止</option></select>
       <button class="secondary-button" type="submit">搜索</button>
-      <button v-if="filters.q || filters.contract_type || filters.status" class="text-button" type="button" @click="clearFilters">清除条件</button>
+      <button v-if="filters.q || filters.contract_type || filters.status || dueOnly" class="text-button" type="button" @click="clearFilters">{{ dueOnly ? '显示全部合同' : '清除条件' }}</button>
     </form>
 
     <div v-if="error" class="error-block">{{ error }}</div>
@@ -305,9 +318,9 @@ onMounted(load);
         <thead><tr><th>合同与相对方</th><th>履约期间与状态</th><th>金额与科目</th><th>负责人</th><th>档案</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="item in rows" :key="item.id" :class="{ due: due.includes(item), expired: item.status === 'expired' }">
-            <td data-label="合同与相对方"><div class="contract-title-line"><strong>{{ item.name }}</strong><span>{{ item.contract_type_name || '未分类' }}</span></div><small>{{ item.contract_no }} · {{ item.supplier_name || '未设置供应商' }}</small><span v-if="item.previous_contract_no" class="lineage-tag">续自 {{ item.previous_contract_no }}</span><span v-else-if="item.renewal_contracts.length" class="lineage-tag">已续签 {{ item.renewal_contracts[0].contract_no }}</span><span v-else-if="item.supplement_contracts.length" class="lineage-tag">含 {{ item.supplement_contracts.length }} 份补充协议</span></td>
+            <td data-label="合同与相对方"><div class="contract-title-line"><strong>{{ item.name }}</strong><span>{{ item.contract_type_name || '未分类' }}</span></div><small>{{ item.contract_no }} · {{ item.supplier_name || item.office_name || '未设置相对方' }}</small><span v-if="item.office_name" class="lineage-tag">关联 {{ item.office_name }}</span><span v-if="item.previous_contract_no" class="lineage-tag">续自 {{ item.previous_contract_no }}</span><span v-else-if="item.renewal_contracts.length" class="lineage-tag">已续签 {{ item.renewal_contracts[0].contract_no }}</span><span v-else-if="item.supplement_contracts.length" class="lineage-tag">含 {{ item.supplement_contracts.length }} 份补充协议</span></td>
             <td data-label="履约期间与状态"><strong>{{ item.start_date || '—' }} → {{ item.end_date || '—' }}</strong><div class="contract-status-line"><span class="record-status" :data-status="item.status">{{ item.status_label }}</span><small :class="{ 'due-copy': due.includes(item) }">{{ dueText(item) }}</small></div></td>
-            <td data-label="金额与科目"><strong>{{ money(item.total_amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
+            <td data-label="金额与科目"><strong>{{ item.amount_description || money(item.total_amount) }}</strong><small>{{ item.category_name || '未设置费用类别' }}</small></td>
             <td data-label="负责人"><strong>{{ item.owner_name || '未设置' }}</strong><small>{{ item.department_name || '未设置部门' }}</small></td>
             <td data-label="档案"><strong>{{ item.attachments.length }} 个文件</strong><small>{{ item.changes.length }} 次变更 · {{ item.auto_renew ? '约定续期' : '人工处理' }}</small></td>
             <td class="contract-row-actions"><button class="contract-edit-button" @click="openForm(item)">编辑</button><button class="contract-action-button" @click="openFiles(item)">文件</button><button class="contract-action-button" @click="openHistory(item)">历史</button><button v-if="!item.supplement_of && !item.renewal_contracts.length && !['terminated'].includes(item.status)" class="contract-action-button" @click="openRenew(item)">续签</button><button v-if="!item.supplement_of && !['completed','terminated'].includes(item.status)" class="contract-action-button" @click="openChange(item)">变更</button><button v-if="props.isSuperuser" class="contract-action-button danger" @click="deleteContract(item)">删除</button></td>
@@ -330,6 +343,7 @@ onMounted(load);
               <label><span>合同名称</span><input v-model="form.name" required /></label>
               <label><span>合同类型</span><select v-model="form.contract_type"><option value="">未分类</option><option v-for="item in contractTypes.filter((x) => x.is_active)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
               <label><span>供应商</span><select v-model="form.supplier"><option value="">未设置</option><option v-for="item in suppliers" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+              <label><span>关联办事处</span><select v-model="form.office"><option value="">未关联</option><option v-for="item in offices" :key="item.id" :value="item.id">{{ item.code }} · {{ item.name }}</option></select></label>
               <label><span>费用类别</span><select v-model="form.category"><option value="">未设置</option><option v-for="item in categories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
               <label><span>归属部门</span><select v-model="form.department"><option value="">未设置</option><option v-for="item in lookups?.departments || []" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
               <label v-if="props.isSuperuser"><span>负责人</span><PersonSearchSelect v-model="form.owner" :users="lookups?.users || []" /></label>
@@ -343,6 +357,7 @@ onMounted(load);
               <label><span>开始日期</span><input v-model="form.start_date" type="date" :disabled="formMode === 'edit'" /></label>
               <label><span>结束日期</span><input v-model="form.end_date" type="date" :disabled="formMode === 'edit'" /></label>
               <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required :disabled="formMode === 'edit'" /></label>
+              <label class="wide"><span>费用金额说明</span><input v-model="form.amount_description" placeholder="例如：按实际结算、3500 元/月" /></label>
               <label><span>到期提前提醒</span><span class="contract-input-suffix"><input v-model.number="form.renewal_notice_days" type="number" min="1" /><b>天</b></span></label>
               <label class="contract-renew-toggle"><input v-model="form.auto_renew" type="checkbox" /><span><strong>合同约定自动续期</strong></span></label>
             </div>
@@ -352,6 +367,9 @@ onMounted(load);
             <div class="contract-form-grid">
               <label><span>金蝶编码</span><input v-model="form.kingdee_code" /></label>
               <label><span>预算系统标识</span><input v-model="form.external_id" /></label>
+              <label><span>付款方式</span><input v-model="form.payment_method" /></label>
+              <label class="wide"><span>付款要求</span><textarea v-model="form.payment_terms"></textarea></label>
+              <label class="wide"><span>服务内容</span><textarea v-model="form.service_content"></textarea></label>
               <label class="wide"><span>备注</span><textarea v-model="form.notes"></textarea></label>
             </div>
           </section>
@@ -404,6 +422,7 @@ onMounted(load);
             <dl class="history-facts">
               <div><dt>合同类型</dt><dd>{{ activeHistory.contract_type_name || '未分类' }}</dd></div>
               <div><dt>供应商</dt><dd>{{ activeHistory.supplier_name || '未设置' }}</dd></div>
+              <div><dt>关联办事处</dt><dd>{{ activeHistory.office_name || '未关联' }}</dd></div>
               <div><dt>履约期间</dt><dd>{{ activeHistory.start_date || '—' }} 至 {{ activeHistory.end_date || '—' }}</dd></div>
               <div><dt>费用类别</dt><dd>{{ activeHistory.category_name || '未设置' }}</dd></div>
               <div><dt>负责人</dt><dd>{{ activeHistory.owner_name || '未设置' }}</dd></div>
@@ -411,6 +430,7 @@ onMounted(load);
               <div><dt>金蝶编码</dt><dd>{{ activeHistory.kingdee_code || '未设置' }}</dd></div>
               <div><dt>到期处理</dt><dd>{{ activeHistory.auto_renew ? '合同约定自动续期' : '到期人工处理' }}</dd></div>
             </dl>
+            <p v-if="activeHistory.amount_description || activeHistory.payment_method || activeHistory.payment_terms || activeHistory.service_content" class="history-notes"><strong>履约与结算</strong><span v-if="activeHistory.amount_description">费用：{{ activeHistory.amount_description }}</span><span v-if="activeHistory.payment_method">付款方式：{{ activeHistory.payment_method }}</span><span v-if="activeHistory.payment_terms">付款要求：{{ activeHistory.payment_terms }}</span><span v-if="activeHistory.service_content">服务内容：{{ activeHistory.service_content }}</span></p>
             <p v-if="activeHistory.notes" class="history-notes"><strong>合同备注</strong>{{ activeHistory.notes }}</p>
             <section class="history-section"><header><div><strong>变更记录</strong><span>延期、调价、补充协议与终止记录</span></div><b>{{ activeHistory.changes.length }}</b></header><div v-if="activeHistory.changes.length" class="history-change-list"><article v-for="change in activeHistory.changes" :key="change.id"><div><strong>{{ change.change_type_label }}</strong><time>{{ change.changed_on }}</time></div><p>{{ change.notes }}</p><small v-if="change.change_type === 'supplement'">补充金额：{{ money(change.new_amount || 0) }} · 补充期间：{{ change.new_start_date || '—' }} 至 {{ change.new_end_date || '—' }}</small><small v-else-if="change.new_end_date">结束日期：{{ change.old_end_date || '—' }} → {{ change.new_end_date }}</small><small v-else-if="change.new_amount">合同金额：{{ money(change.old_amount || 0) }} → {{ money(change.new_amount) }}</small></article></div><p v-else class="history-compact-empty">本期合同没有变更记录。</p></section>
             <section v-if="activeHistory.supplement_contracts.length" class="history-section"><header><div><strong>附属合同</strong><span>登记于本合同的补充协议</span></div><b>{{ activeHistory.supplement_contracts.length }}</b></header><div class="history-change-list"><article v-for="item in activeHistory.supplement_contracts" :key="item.id"><div><strong>{{ item.contract_no }}</strong><time>{{ item.start_date || '—' }} 至 {{ item.end_date || '—' }}</time></div><p>{{ item.name }}</p><small>补充金额：{{ money(item.amount) }} · {{ item.status_label }}</small></article></div></section>
