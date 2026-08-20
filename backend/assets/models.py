@@ -750,6 +750,46 @@ class EmailNotification(TimeStampedModel):
         return f"{self.recipient_email} · {self.subject}"
 
 
+class OperationLog(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="操作用户",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="operation_logs",
+    )
+    username = models.CharField("用户名快照", max_length=150, db_index=True)
+    display_name = models.CharField("姓名快照", max_length=150)
+    module = models.CharField("功能模块", max_length=32, db_index=True)
+    module_label = models.CharField("模块名称", max_length=80)
+    action = models.CharField("操作类型", max_length=64, db_index=True)
+    action_label = models.CharField("操作名称", max_length=80)
+    target_type = models.CharField("对象类型", max_length=80, blank=True)
+    target_id = models.CharField("对象ID", max_length=64, blank=True)
+    target_label = models.CharField("操作对象", max_length=255, blank=True)
+    method = models.CharField("请求方法", max_length=8)
+    path = models.CharField("请求路径", max_length=500)
+    status_code = models.PositiveSmallIntegerField("响应状态", db_index=True)
+    succeeded = models.BooleanField("操作成功", db_index=True)
+    ip_address = models.GenericIPAddressField("来源IP", null=True, blank=True)
+    user_agent = models.CharField("客户端", max_length=500, blank=True)
+    details = models.JSONField("附加信息", default=dict, blank=True)
+    occurred_at = models.DateTimeField("操作时间", auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-occurred_at", "-id"]
+        verbose_name = "操作日志"
+        verbose_name_plural = "操作日志"
+        indexes = [
+            models.Index(fields=["module", "-occurred_at"], name="op_log_module_time_idx"),
+            models.Index(fields=["username", "-occurred_at"], name="op_log_user_time_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.display_name} · {self.action_label} · {self.target_label or self.path}"
+
+
 class ExpenseCategory(TimeStampedModel):
     name = models.CharField("费用类别", max_length=80)
     code = models.CharField("类别编码", max_length=32, unique=True)

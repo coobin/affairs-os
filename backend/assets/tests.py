@@ -12,6 +12,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from openpyxl import Workbook, load_workbook
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 from rest_framework.exceptions import ValidationError
 
@@ -36,6 +37,7 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    OperationLog,
     PurchaseOrder,
     PurchaseRequest,
     Supplier,
@@ -50,6 +52,143 @@ from .oidc import sync_oidc_user
 from .tasks import send_daily_operational_notifications, send_email_notification
 
 User = get_user_model()
+
+
+class OperationLogTests(TestCase):
+    def setUp(self):
+        self.superuser = User.objects.create_user(
+            "operation-super",
+            password="pass",
+            first_name="超级管理员",
+            is_superuser=True,
+            is_staff=True,
+        )
+        self.manager = User.objects.create_user(
+            "operation-manager",
+            password="pass",
+            first_name="具体使用人",
+        )
+        AssetManagerRole.objects.create(user=self.manager, scopes=["settings", "inventory"])
+        self.manager_token = Token.objects.create(user=self.manager)
+        self.super_token = Token.objects.create(user=self.superuser)
+        self.manager_client = APIClient()
+        self.manager_client.credentials(
+            HTTP_AUTHORIZATION=f"Token {self.manager_token.key}",
+            HTTP_X_FORWARDED_FOR="10.1.22.88, 10.1.6.15",
+            HTTP_USER_AGENT="AffairsOS test client",
+        )
+        self.super_client = APIClient()
+        self.super_client.credentials(HTTP_AUTHORIZATION=f"Token {self.super_token.key}")
+
+    def test_mutation_is_logged_with_user_action_target_and_ip(self):
+        created = self.manager_client.post(
+            "/api/v1/categories/",
+            {
+                "name": "日志测试资产类型",
+                "code": "AUDIT-LOG",
+                "class_type": "IT",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(created.status_code, 201)
+        log = OperationLog.objects.get(username=self.manager.username)
+        self.assertEqual(log.display_name, "具体使用人")
+        self.assertEqual(log.module, "settings")
+        self.assertEqual(log.action, "create")
+        self.assertEqual(log.action_label, "新增")
+        self.assertEqual(log.target_id, str(created.data["id"]))
+        self.assertIn("日志测试资产类型", log.target_label)
+        self.assertEqual(log.status_code, 201)
+        self.assertTrue(log.succeeded)
+        self.assertEqual(log.ip_address, "10.1.22.88")
+        self.assertNotIn("password", str(log.details).lower())
+
+    def test_failed_mutation_is_logged_and_get_is_not_logged(self):
+        AssetCategory.objects.create(name="已有类型", code="AUDIT-DUP")
+        listed = self.manager_client.get("/api/v1/categories/")
+        failed = self.manager_client.post(
+            "/api/v1/categories/",
+            {"name": "重复类型", "code": "AUDIT-DUP", "class_type": "IT"},
+            format="json",
+        )
+
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(failed.status_code, 400)
+        self.assertEqual(OperationLog.objects.count(), 1)
+        log = OperationLog.objects.get()
+        self.assertFalse(log.succeeded)
+        self.assertEqual(log.status_code, 400)
+
+    def test_inventory_action_uses_specific_business_action_label(self):
+        item = InventoryItem.objects.create(
+            sku="AUDIT-STOCK-001",
+            name="日志测试库存",
+            kind=InventoryItem.Kind.CONSUMABLE,
+            quantity=1,
+        )
+
+        response = self.manager_client.post(
+            f"/api/v1/inventory/{item.pk}/transactions/",
+            {"action": "inbound", "quantity": 2},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        log = OperationLog.objects.get()
+        self.assertEqual(log.action, "inventory_inbound")
+        self.assertEqual(log.action_label, "库存入库")
+        self.assertEqual(log.target_id, str(item.pk))
+
+    def test_only_superuser_can_view_and_filter_operation_logs(self):
+        OperationLog.objects.create(
+            user=self.manager,
+            username=self.manager.username,
+            display_name="具体使用人",
+            module="assets",
+            module_label="资产管理",
+            action="partial_update",
+            action_label="编辑",
+            target_type="asset",
+            target_id="9",
+            target_label="IT-NB-009 · 测试电脑",
+            method="PATCH",
+            path="/api/v1/assets/9/",
+            status_code=200,
+            succeeded=True,
+            ip_address="10.1.22.88",
+        )
+
+        denied = self.manager_client.get("/api/v1/settings/operation-logs/")
+        visible = self.super_client.get(
+            "/api/v1/settings/operation-logs/",
+            {"username": self.manager.username, "module": "assets", "result": "success", "q": "测试电脑"},
+        )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(visible.status_code, 200)
+        self.assertEqual(visible.data["count"], 1)
+        self.assertEqual(visible.data["results"][0]["target_label"], "IT-NB-009 · 测试电脑")
+        self.assertEqual(visible.data["filters"]["users"][0]["username"], self.manager.username)
+
+    @override_settings(LOCAL_LOGIN_USERNAME="operation-super")
+    def test_successful_login_and_logout_are_logged_without_credentials(self):
+        self.super_token.delete()
+        login_client = APIClient()
+        logged_in = login_client.post(
+            "/api/v1/auth/local/login/",
+            {"username": "operation-super", "password": "pass"},
+            format="json",
+        )
+        login_client.credentials(HTTP_AUTHORIZATION=f"Token {logged_in.data['token']}")
+        logged_out = login_client.post("/api/v1/auth/logout/", {}, format="json")
+
+        self.assertEqual(logged_in.status_code, 200)
+        self.assertEqual(logged_out.status_code, 204)
+        logs = OperationLog.objects.filter(username="operation-super").order_by("occurred_at")
+        self.assertEqual(list(logs.values_list("action", flat=True)), ["login", "logout"])
+        self.assertTrue(all("pass" not in str(log.details).lower() for log in logs))
 
 
 class AssetActionServiceTests(TestCase):

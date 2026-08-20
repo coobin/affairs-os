@@ -26,6 +26,7 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    OperationLog,
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseRequest,
@@ -99,6 +100,30 @@ class AssetManagerRoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssetManagerRole
         fields = ("id", "user", "scopes", "updated_at")
+
+
+class OperationLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OperationLog
+        fields = (
+            "id",
+            "username",
+            "display_name",
+            "module",
+            "module_label",
+            "action",
+            "action_label",
+            "target_type",
+            "target_id",
+            "target_label",
+            "method",
+            "path",
+            "status_code",
+            "succeeded",
+            "ip_address",
+            "occurred_at",
+        )
+        read_only_fields = fields
 
 
 class DepartmentSerializer(serializers.ModelSerializer):

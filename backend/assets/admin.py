@@ -18,6 +18,7 @@ from .models import (
     InventoryItem,
     InventoryTransaction,
     Location,
+    OperationLog,
     PurchaseOrder,
     PurchaseOrderItem,
     PurchaseRequest,
@@ -100,6 +101,23 @@ class EmailNotificationAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OperationLog)
+class OperationLogAdmin(admin.ModelAdmin):
+    list_display = ("occurred_at", "display_name", "module_label", "action_label", "target_label", "succeeded", "ip_address")
+    list_filter = ("module", "action", "succeeded", "occurred_at")
+    search_fields = ("username", "display_name", "target_label", "path")
+    readonly_fields = [field.name for field in OperationLog._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 

@@ -25,6 +25,7 @@ from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.views import APIView
 
 from .imports import (
@@ -56,6 +57,7 @@ from .models import (
     InventoryTransaction,
     Location,
     ModuleToggle,
+    OperationLog,
     PurchaseOrder,
     PurchaseRequest,
     Supplier,
@@ -66,6 +68,7 @@ from .models import (
     VehicleExpense,
 )
 from .oidc import oauth, sync_oidc_user
+from .middleware import mark_operation
 from .nextcloud import NextcloudStorageError, storage as nextcloud_storage
 from .notifications import (
     notify_inventory_transaction,
@@ -103,6 +106,7 @@ from .serializers import (
     InventoryItemSerializer,
     LocationSerializer,
     LoginSerializer,
+    OperationLogSerializer,
     StocktakeTaskSerializer,
     ExpenseCategorySerializer,
     PurchaseOrderSerializer,
@@ -247,6 +251,12 @@ class OIDCCompleteView(APIView):
             return Response({"message": "登录凭证已失效，请重新登录。"}, status=400)
         cache.delete(cache_key)
         token = Token.objects.select_related("user").get(key=token_key)
+        mark_operation(
+            request,
+            user=token.user,
+            action="login",
+            target_label=token.user.get_full_name() or token.user.username,
+        )
         return Response({"token": token.key, "user": UserOptionSerializer(token.user).data})
 
 
@@ -264,6 +274,12 @@ class LocalLoginView(APIView):
 
         user = serializer.validated_data["user"]
         token, _ = Token.objects.get_or_create(user=user)
+        mark_operation(
+            request,
+            user=user,
+            action="login",
+            target_label=user.get_full_name() or user.username,
+        )
         return Response({"token": token.key, "user": UserOptionSerializer(user).data})
 
 
@@ -787,6 +803,79 @@ class ModuleSettingsView(APIView):
                 "enabled": enabled,
             }
         )
+
+
+class OperationLogPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+
+class OperationLogView(APIView):
+    permission_classes = [IsSuperAdministrator]
+
+    def get(self, request):
+        queryset = OperationLog.objects.select_related("user")
+        username = request.query_params.get("username", "").strip()
+        module = request.query_params.get("module", "").strip()
+        action = request.query_params.get("action", "").strip()
+        result = request.query_params.get("result", "").strip()
+        date_from = request.query_params.get("date_from", "").strip()
+        date_to = request.query_params.get("date_to", "").strip()
+        query = request.query_params.get("q", "").strip()
+
+        if username:
+            queryset = queryset.filter(username=username)
+        if module:
+            queryset = queryset.filter(module=module)
+        if action:
+            queryset = queryset.filter(action=action)
+        if result == "success":
+            queryset = queryset.filter(succeeded=True)
+        elif result == "failed":
+            queryset = queryset.filter(succeeded=False)
+        try:
+            if date_from:
+                queryset = queryset.filter(occurred_at__date__gte=date.fromisoformat(date_from))
+            if date_to:
+                queryset = queryset.filter(occurred_at__date__lte=date.fromisoformat(date_to))
+        except ValueError:
+            return Response({"message": "日志日期格式不正确。"}, status=400)
+        if query:
+            queryset = queryset.filter(
+                Q(username__icontains=query)
+                | Q(display_name__icontains=query)
+                | Q(target_label__icontains=query)
+                | Q(path__icontains=query)
+                | Q(action_label__icontains=query)
+            )
+
+        paginator = OperationLogPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        response = paginator.get_paginated_response(
+            OperationLogSerializer(page, many=True).data
+        )
+        response.data["filters"] = {
+            "users": [
+                {"username": row["username"], "display_name": row["display_name"]}
+                for row in OperationLog.objects.values("username", "display_name")
+                .order_by("display_name", "username")
+                .distinct()
+            ],
+            "modules": [
+                {"value": row["module"], "label": row["module_label"]}
+                for row in OperationLog.objects.values("module", "module_label")
+                .order_by("module_label", "module")
+                .distinct()
+            ],
+            "actions": [
+                {"value": row["action"], "label": row["action_label"]}
+                for row in OperationLog.objects.values("action", "action_label")
+                .order_by("action_label", "action")
+                .distinct()
+            ],
+        }
+        return response
 
 
 class AssetRequestViewSet(viewsets.ModelViewSet):

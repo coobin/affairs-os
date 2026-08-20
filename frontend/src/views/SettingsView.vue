@@ -8,28 +8,46 @@ import type { User } from "../types";
 const props = defineProps<{ isSuperuser: boolean }>();
 const emit = defineEmits<{ "refresh-lookups": [] }>();
 type BaseKind = "categories" | "locations" | "departments" | "asset-statuses" | "expense-categories" | "contract-types";
-type Kind = BaseKind | "managers" | "modules";
+type Kind = BaseKind | "managers" | "modules" | "logs";
 type Row = { id: number; name: string; code: string; is_active: boolean; is_system?: boolean; kind?: string; address?: string; description?: string; class_type_label?: string; enabled?: boolean };
 type Module = { value: string; label: string };
+type OperationLog = {
+  id: number; username: string; display_name: string; module: string; module_label: string;
+  action: string; action_label: string; target_type: string; target_id: string; target_label: string;
+  method: string; path: string; status_code: number; succeeded: boolean; ip_address: string | null; occurred_at: string;
+};
+type LogResponse = {
+  count: number; next: string | null; previous: string | null; results: OperationLog[];
+  filters: { users: { username: string; display_name: string }[]; modules: Module[]; actions: Module[] };
+};
 
 const tab = ref<Kind>("categories");
 const rows = reactive<Record<BaseKind, Row[]>>({ categories: [], locations: [], departments: [], "asset-statuses": [], "expense-categories": [], "contract-types": [] });
 const moduleRows = ref<Row[]>([]);
 const managerUsers = ref<User[]>([]);
 const modules = ref<Module[]>([]);
+const operationLogs = ref<OperationLog[]>([]);
+const logCount = ref(0);
+const logPage = ref(1);
+const logNext = ref<string | null>(null);
+const logPrevious = ref<string | null>(null);
+const logLoading = ref(false);
+const logOptions = reactive<{ users: { username: string; display_name: string }[]; modules: Module[]; actions: Module[] }>({ users: [], modules: [], actions: [] });
+const logFilters = reactive({ username: "", module: "", action: "", result: "", date_from: "", date_to: "", q: "" });
 const managerUserId = ref("");
 const error = ref("");
 const savedUser = ref<number | null>(null);
 const form = reactive({ name: "", code: "", kind: "office", address: "", description: "", class_type: "IT" });
-const labels: Record<Kind, string> = { categories: "资产类型", locations: "地点与库房", departments: "组织部门", "asset-statuses": "资产状态", "expense-categories": "费用类别", "contract-types": "合同类型", managers: "板块管理员", modules: "模块开关" };
+const labels: Record<Kind, string> = { categories: "资产类型", locations: "地点与库房", departments: "组织部门", "asset-statuses": "资产状态", "expense-categories": "费用类别", "contract-types": "合同类型", managers: "板块管理员", modules: "模块开关", logs: "操作日志" };
 const current = computed(() => {
-  if (tab.value === "managers") return [];
+  if (tab.value === "managers" || tab.value === "logs") return [];
   if (tab.value === "modules") return moduleRows.value;
   return rows[tab.value];
 });
 const selectedManager = computed(() =>
   managerUsers.value.find((user) => String(user.id) === String(managerUserId.value)) || null,
 );
+const logPageCount = computed(() => Math.max(1, Math.ceil(logCount.value / 50)));
 
 async function load(kind: BaseKind) { rows[kind] = await api<Row[]>(`/${kind}/?page_size=500`); }
 async function loadModules() {
@@ -42,6 +60,33 @@ async function loadManagers() {
   const data = await api<{ modules: Module[]; users: User[] }>("/settings/managers/");
   modules.value = data.modules.filter((item) => item.value !== "stocktake");
   managerUsers.value = data.users;
+}
+async function loadLogs(page = 1) {
+  if (!props.isSuperuser) return;
+  logLoading.value = true;
+  error.value = "";
+  const params = new URLSearchParams({ page: String(page), page_size: "50" });
+  Object.entries(logFilters).forEach(([key, value]) => { if (value) params.set(key, value); });
+  try {
+    const data = await api<LogResponse>(`/settings/operation-logs/?${params.toString()}`);
+    operationLogs.value = data.results;
+    logCount.value = data.count;
+    logPage.value = page;
+    logNext.value = data.next;
+    logPrevious.value = data.previous;
+    Object.assign(logOptions, data.filters);
+  } catch (err) {
+    error.value = err instanceof ApiError ? err.message : "操作日志暂时无法加载。";
+  } finally {
+    logLoading.value = false;
+  }
+}
+function resetLogFilters() {
+  Object.assign(logFilters, { username: "", module: "", action: "", result: "", date_from: "", date_to: "", q: "" });
+  loadLogs(1);
+}
+function formatLogTime(value: string) {
+  return new Date(value).toLocaleString("zh-CN", { hour12: false });
 }
 async function create() {
   if (tab.value === "managers" || tab.value === "modules") return;
@@ -88,6 +133,7 @@ async function select(next: Kind) {
   error.value = "";
   if (next === "managers") await loadManagers();
   else if (next === "modules") await loadModules();
+  else if (next === "logs") await loadLogs(1);
   else await load(next);
 }
 async function toggleScope(user: User, scope: string) {
@@ -113,9 +159,32 @@ onMounted(() => Promise.all((["categories", "locations", "departments", "asset-s
       <button v-if="isSuperuser" :class="{ active: tab === 'modules' }" @click="select('modules')">模块开关<span>{{ moduleRows.filter((item) => item.enabled).length }}/{{ moduleRows.length }}</span></button>
       <button v-if="isSuperuser" :class="{ active: tab === 'managers' }" @click="select('managers')">板块管理员<span>{{ managerUsers.filter((item) => item.management_scopes.length).length }}</span>
       </button>
+      <button v-if="isSuperuser" :class="{ active: tab === 'logs' }" @click="select('logs')">操作日志<span>{{ logCount }}</span></button>
     </nav>
 
-    <section v-if="tab === 'managers'" class="manager-settings">
+    <section v-if="tab === 'logs'" class="operation-log-settings">
+      <header class="operation-log-head"><div><p class="eyebrow">AUDIT TRAIL</p><h2>用户操作记录</h2><p>记录登录及所有会改变数据的操作，不保存密码、令牌和文件内容。</p></div><strong>{{ logCount }} 条</strong></header>
+      <form class="operation-log-filter-bar" @submit.prevent="loadLogs(1)">
+        <input v-model.trim="logFilters.q" placeholder="搜索姓名、对象或接口" />
+        <select v-model="logFilters.username"><option value="">全部用户</option><option v-for="item in logOptions.users" :key="item.username" :value="item.username">{{ item.display_name }}（{{ item.username }}）</option></select>
+        <select v-model="logFilters.module"><option value="">全部模块</option><option v-for="item in logOptions.modules" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+        <select v-model="logFilters.action"><option value="">全部操作</option><option v-for="item in logOptions.actions" :key="item.value" :value="item.value">{{ item.label }}</option></select>
+        <select v-model="logFilters.result"><option value="">全部结果</option><option value="success">成功</option><option value="failed">失败</option></select>
+        <label><span>开始日期</span><input v-model="logFilters.date_from" type="date" /></label>
+        <label><span>结束日期</span><input v-model="logFilters.date_to" type="date" /></label>
+        <button class="primary-button">查询</button><button type="button" class="text-button" @click="resetLogFilters">重置</button>
+      </form>
+      <p v-if="error" class="form-error operation-log-error">{{ error }}</p>
+      <div class="operation-log-table-wrap">
+        <table class="admin-table operation-log-table"><thead><tr><th>操作时间</th><th>使用人</th><th>模块与操作</th><th>操作对象</th><th>结果</th></tr></thead><tbody>
+          <tr v-for="item in operationLogs" :key="item.id"><td><strong>{{ formatLogTime(item.occurred_at) }}</strong></td><td><strong>{{ item.display_name }}</strong><small>{{ item.username }}</small></td><td><strong>{{ item.module_label }} · {{ item.action_label }}</strong><small>{{ item.method }} {{ item.path }}</small></td><td><strong>{{ item.target_label || '未返回对象名称' }}</strong><small v-if="item.target_id">记录 ID：{{ item.target_id }}</small></td><td><span class="operation-result" :class="item.succeeded ? 'success' : 'failed'">{{ item.succeeded ? '成功' : '失败' }} · {{ item.status_code }}</span><small>{{ item.ip_address || '未识别来源 IP' }}</small></td></tr>
+        </tbody></table>
+        <div v-if="logLoading" class="operation-log-empty">正在读取操作日志…</div><div v-else-if="!operationLogs.length" class="operation-log-empty">当前筛选条件下没有操作记录。</div>
+      </div>
+      <footer class="operation-log-pagination"><span>第 {{ logPage }} / {{ logPageCount }} 页</span><div><button class="text-button" :disabled="!logPrevious || logLoading" @click="loadLogs(logPage - 1)">上一页</button><button class="text-button" :disabled="!logNext || logLoading" @click="loadLogs(logPage + 1)">下一页</button></div></footer>
+    </section>
+
+    <section v-else-if="tab === 'managers'" class="manager-settings">
       <header class="manager-settings-head"><div><p class="eyebrow">MANAGEMENT SCOPE</p><h2>按板块分配管理权限</h2><p>先搜索选择人员，再勾选其管理的板块。</p></div></header>
       <div class="manager-editor">
         <label class="manager-person-pick"><span>选择人员</span><PersonSearchSelect v-model="managerUserId" :users="managerUsers" placeholder="输入中文姓名搜索" /></label>
