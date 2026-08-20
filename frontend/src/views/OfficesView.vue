@@ -136,10 +136,16 @@ const activeCount = computed(() => rows.value.filter((item) => item.status === "
 const leaseAttentionCount = computed(() => rows.value.filter(isLeaseAttention).length);
 const paymentAttentionCount = computed(() => rows.value.filter(isPaymentAttention).length);
 const employeeOptions = computed(() => (props.lookups?.users || []).filter((user) => !user.is_superuser && user.employee_no));
-const filteredEmployeeOptions = computed(() => {
+const selectedEmployeeOptions = computed(() => {
+  const selected = new Set(form.resident_users);
+  return employeeOptions.value.filter((user) => selected.has(user.id));
+});
+const searchedEmployeeOptions = computed(() => {
   const keyword = residentQuery.value.trim().toLocaleLowerCase("zh-CN");
+  if (!keyword) return [];
+  const selected = new Set(form.resident_users);
   return employeeOptions.value.filter((user) => {
-    if (!keyword) return true;
+    if (selected.has(user.id)) return false;
     return [user.display_name, user.username, user.employee_no, user.department_name]
       .filter(Boolean).join(" ").toLocaleLowerCase("zh-CN").includes(keyword);
   });
@@ -459,13 +465,21 @@ onMounted(load);
               <div class="wide resident-picker">
                 <div class="resident-picker-head"><span>居住员工（在职）</span><small>可多选；同一员工居住在多个使用中办事处会提醒</small></div>
                 <input v-model="residentQuery" class="resident-search" placeholder="搜索姓名、工号或部门" />
-                <div v-if="filteredEmployeeOptions.length" class="resident-option-grid">
-                  <label v-for="user in filteredEmployeeOptions" :key="user.id" class="resident-option">
+                <div v-if="selectedEmployeeOptions.length" class="resident-selected-list">
+                  <label v-for="user in selectedEmployeeOptions" :key="user.id" class="resident-option selected">
                     <input type="checkbox" :checked="form.resident_users.includes(user.id)" @change="toggleResident(user.id)" />
-                    <span><strong>{{ user.display_name }}</strong><small>{{ user.employee_no }} · {{ user.department_name || "未设置部门" }}</small></span>
+                    <span><strong>{{ user.display_name }}</strong></span>
                   </label>
                 </div>
-                <p v-else class="resident-empty">没有匹配的在职员工。</p>
+                <p v-else class="resident-empty">暂未选择居住员工，请通过上方搜索添加。</p>
+                <div v-if="residentQuery.trim() && searchedEmployeeOptions.length" class="resident-search-results">
+                  <p>搜索结果</p>
+                  <label v-for="user in searchedEmployeeOptions" :key="user.id" class="resident-option">
+                    <input type="checkbox" :checked="form.resident_users.includes(user.id)" @change="toggleResident(user.id)" />
+                    <span><strong>{{ user.display_name }}</strong></span>
+                  </label>
+                </div>
+                <p v-else-if="residentQuery.trim()" class="resident-empty">没有匹配的在职员工。</p>
                 <p v-if="selectedResidentWarnings.length" class="resident-warning"><strong>居住地提醒</strong>{{ selectedResidentWarnings.join("；") }}。</p>
               </div>
               <label class="wide"><span>其他居住人 / 原始名单</span><textarea v-model="form.residents" placeholder="保留非员工、流动人员或源表原始说明；员工请优先从上方选择"></textarea></label>
@@ -644,7 +658,8 @@ onMounted(load);
 .resident-picker-head > span { color: #405964; font-size: 12px; font-weight: 800; }
 .resident-picker-head > small { color: var(--ink-soft); font-size: 11px; }
 .resident-search { min-height: 39px; padding: 8px 11px; border: 1px solid #cbd7dc; border-radius: 9px; }
-.resident-option-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 220px; overflow: auto; padding: 2px; }
+.resident-selected-list, .resident-search-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-height: 220px; overflow: auto; padding: 2px; }
+.resident-search-results > p { grid-column: 1 / -1; margin: 0; color: var(--ink-soft); font-size: 11px; font-weight: 700; }
 .resident-option { display: flex !important; min-width: 0; flex-direction: row !important; align-items: flex-start; gap: 8px !important; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfc; }
 .resident-option:has(input:checked) { border-color: var(--blue); background: rgba(25, 95, 164, 0.06); }
 .resident-option > input { width: 17px !important; min-width: 17px; min-height: 17px !important; flex: 0 0 17px; margin: 2px 0 0; padding: 0 !important; }
@@ -704,7 +719,7 @@ onMounted(load);
   .office-result-count { width: 100%; margin-left: 0; }
   .office-form-grid { grid-template-columns: 1fr; }
   .office-form-grid .wide { grid-column: auto; }
-  .resident-option-grid { grid-template-columns: 1fr; }
+  .resident-selected-list, .resident-search-results { grid-template-columns: 1fr; }
   .office-form-section > header { align-items: flex-start; flex-direction: column; }
   .office-detail-body { grid-template-columns: 1fr; }
   .office-address-plaque { position: relative; min-height: 210px; }
