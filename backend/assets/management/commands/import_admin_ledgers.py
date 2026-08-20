@@ -236,7 +236,9 @@ class Command(BaseCommand):
                 ("channels", channel), ("contacts", contact), ("phones", phone),
                 ("addresses", address), ("licenses", license_flag), ("notes", note),
             ]:
-                value = meaningful(value)
+                value = clean_text(value) if key == "licenses" else meaningful(value)
+                if key == "licenses" and value in {"", "/", "-"}:
+                    value = ""
                 if value and value not in record[key]:
                     record[key].append(value)
             if active is not None:
@@ -310,8 +312,9 @@ class Command(BaseCommand):
             licenses = record["licenses"]
             has_license = any(value.startswith("有") for value in licenses)
             missing_license = any(value.startswith("无") for value in licenses)
+            unknown_license = any(value in {"?", "？"} or value.startswith("未知") for value in licenses)
             license_status = "registered" if has_license else "missing" if missing_license else "unknown"
-            conflict_note = "营业执照状态来源存在冲突，按“已登记”保留，实际文件待补。" if has_license and missing_license else ""
+            conflict_note = "营业执照状态来源存在冲突，按“已登记”保留，实际文件待补。" if has_license and (missing_license or unknown_license) else ""
             contact_pairs = [
                 " / ".join(item for item in pair if item)
                 for pair in zip(record["contacts"], record["phones"] + [""] * len(record["contacts"]))
