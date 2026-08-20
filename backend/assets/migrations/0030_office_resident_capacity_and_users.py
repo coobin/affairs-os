@@ -10,7 +10,7 @@ def match_existing_residents(apps, schema_editor):
     users = list(User.objects.filter(is_active=True, employee_profile__isnull=False))
     by_name = {}
     for user in users:
-        full_name = user.get_full_name() or ""
+        full_name = f"{getattr(user, 'first_name', '')}{getattr(user, 'last_name', '')}"
         for value in (full_name, user.username, getattr(user.employee_profile, "employee_no", "")):
             key = re.sub(r"\s+", "", value or "").casefold()
             if key:
