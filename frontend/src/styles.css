@@ -4447,6 +4447,7 @@ label b {
 .contract-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px 15px; padding: 14px; }
 .contract-form-modal .contract-form-grid label { min-width: 0; gap: 5px; }.contract-form-modal .contract-form-grid label > span { font-size: 10px; }
 .contract-form-modal .contract-form-grid input, .contract-form-modal .contract-form-grid select { min-height: 39px; padding: 8px 10px; border-radius: 8px; font-size: 13px; }.contract-form-modal .contract-form-grid textarea { min-height: 64px; border-radius: 8px; font-size: 13px; }
+.contract-reminder-hint { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid #d7e3e8; border-radius: 9px; background: #f7fafb; color: #667c88; font-size: 11px; }.contract-reminder-hint strong { color: #324d5c; font-size: 11px; }
 .contract-input-suffix { display: grid!important; grid-template-columns: minmax(0, 1fr) 34px; align-items: stretch; padding: 0; border: 1px solid #cbd7dc; border-radius: 8px; background: #fff; overflow: hidden; }
 .contract-input-suffix input { min-height: 37px!important; border: 0!important; border-radius: 0!important; }.contract-input-suffix b { display: grid; place-items: center; border-left: 1px solid #dce4e8; background: #f3f6f8; color: #667c88; font-size: 11px; }
 .contract-renew-toggle { grid-column: 1 / -1; display: flex!important; align-items: center; flex-direction: row!important; gap: 10px!important; padding: 10px 12px; border: 1px solid #d7e3e8; border-radius: 9px; background: #f7fafb; cursor: pointer; }

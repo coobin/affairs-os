@@ -38,6 +38,7 @@ from .imports import (
     summarize_import,
     summarize_inventory_import,
 )
+from .contract_reminders import contract_reminder_dates
 from .models import (
     Asset,
     AssetCategory,
@@ -639,9 +640,11 @@ class DashboardView(APIView):
                 request.user,
                 Contract.objects.filter(
                     status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
-                    end_date__lte=today + timedelta(days=30),
                     renewal_contracts__isnull=True,
                     supplement_of__isnull=True,
+                ).filter(
+                    Q(end_date__lte=today)
+                    | Q(end_date__in=contract_reminder_dates(today))
                 ),
             ).distinct()
         vehicle_insurance_due = Vehicle.objects.none()
@@ -1866,9 +1869,12 @@ class ContractViewSet(viewsets.ModelViewSet):
         if office:
             queryset = queryset.filter(office_id=office)
         if due in {"1", "true", "yes"}:
+            today = timezone.localdate()
             queryset = queryset.filter(
                 status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
-                end_date__lte=timezone.localdate() + timedelta(days=30),
+            ).filter(
+                Q(end_date__lte=today)
+                | Q(end_date__in=contract_reminder_dates(today))
             )
         return queryset.distinct()
 

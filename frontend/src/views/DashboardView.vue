@@ -34,7 +34,7 @@ const taskItems = computed(() => {
   if (props.scopes.includes("contracts")) {
     items.push({
       label: "合同即将到期",
-      hint: "未来 30 天或已到期",
+      hint: "到期前45/30/15/7天、当天及逾期每日",
       count: data.value.admin_tasks.expiring_contracts,
       path: "/contracts?due=1",
     });

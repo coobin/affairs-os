@@ -2047,7 +2047,7 @@ class EmailNotificationTests(TestCase):
             name="负责人专属合同",
             owner=owner,
             status=Contract.Status.ACTIVE,
-            end_date=timezone.localdate() + timedelta(days=10),
+            end_date=timezone.localdate() + timedelta(days=7),
         )
 
         send_daily_operational_notifications()
@@ -2060,6 +2060,52 @@ class EmailNotificationTests(TestCase):
             recipients,
             {"contract-owner@example.com", "contract-superuser@example.com"},
         )
+
+    def test_contract_due_email_uses_fixed_milestones_and_daily_overdue(self):
+        owner = User.objects.create_user(
+            "contract-milestone-owner",
+            password="pass",
+            email="contract-milestone@example.com",
+        )
+        contract = Contract.objects.create(
+            contract_no="HT-MILESTONE-001",
+            name="固定节点合同",
+            owner=owner,
+            status=Contract.Status.ACTIVE,
+            end_date=date(2026, 9, 30),
+            renewal_notice_days=90,
+        )
+
+        for reminder_date in (
+            date(2026, 8, 16),  # 提前45天
+            date(2026, 8, 17),  # 不在提醒节点
+            date(2026, 8, 31),  # 提前30天
+            date(2026, 9, 15),  # 提前15天
+            date(2026, 9, 23),  # 提前7天
+            date(2026, 9, 23),  # 同一天不重复
+        ):
+            with patch("assets.tasks.timezone.localdate", return_value=reminder_date):
+                send_daily_operational_notifications()
+        self.assertEqual(
+            EmailNotification.objects.filter(
+                event_type="contract_expiry",
+                recipient_email=owner.email,
+            ).count(),
+            4,
+        )
+
+        contract.end_date = date(2026, 8, 15)
+        contract.save(update_fields=["end_date"])
+        for reminder_date in (date(2026, 8, 15), date(2026, 8, 16), date(2026, 8, 16)):
+            with patch("assets.tasks.timezone.localdate", return_value=reminder_date):
+                send_daily_operational_notifications()
+        overdue_notifications = EmailNotification.objects.filter(
+            event_type="contract_expiry",
+            recipient_email=owner.email,
+        )
+        self.assertEqual(overdue_notifications.count(), 6)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, Contract.Status.EXPIRED)
 
     def test_user_deactivation_sends_manager_email_once(self):
         self.asset.status = Asset.Status.ASSIGNED
@@ -2491,7 +2537,7 @@ class AdministrativePhaseTests(TestCase):
             owner=self.employee,
             amount="1000.00",
             status=Contract.Status.ACTIVE,
-            end_date=timezone.localdate() + timedelta(days=10),
+            end_date=timezone.localdate() + timedelta(days=7),
         )
         other = Contract.objects.create(
             contract_no="HT-OTHER-001",
@@ -2499,7 +2545,7 @@ class AdministrativePhaseTests(TestCase):
             owner=other_manager,
             amount="2000.00",
             status=Contract.Status.ACTIVE,
-            end_date=timezone.localdate() + timedelta(days=10),
+            end_date=timezone.localdate() + timedelta(days=7),
         )
         Contract.objects.create(
             contract_no="HT-NO-OWNER-001",
@@ -2884,6 +2930,10 @@ class AdministrativePhaseTests(TestCase):
         self.client.force_authenticate(self.admin)
         Contract.objects.create(
             contract_no="DUE-001", name="近期合同", owner=self.employee,
+            status=Contract.Status.ACTIVE, end_date=timezone.localdate() + timedelta(days=7),
+        )
+        Contract.objects.create(
+            contract_no="NOT-DUE-001", name="非提醒节点合同", owner=self.employee,
             status=Contract.Status.ACTIVE, end_date=timezone.localdate() + timedelta(days=10),
         )
         Contract.objects.create(

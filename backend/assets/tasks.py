@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from .models import Asset, Contract, EmailNotification, Vehicle
 from .permissions import HIDDEN_SYSTEM_USERNAME, is_hidden_superuser
+from .contract_reminders import contract_reminder_stage
 
 
 User = get_user_model()
@@ -210,15 +211,15 @@ def send_daily_operational_notifications():
             body=f"{vehicle.plate_number} · {vehicle.name}\n\n" + "\n".join(due_parts) + "\n\n请及时办理续保或年检。",
         )
 
-    contract_due = [
-        contract
-        for contract in Contract.objects.filter(
-            status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
-            end_date__isnull=False,
-        ).select_related("owner", "supplier")
-        if contract.end_date <= today + timedelta(days=contract.renewal_notice_days)
-    ]
-    for contract in contract_due:
+    contract_due = []
+    for contract in Contract.objects.filter(
+        status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
+        end_date__isnull=False,
+    ).select_related("owner", "supplier"):
+        reminder_stage = contract_reminder_stage(contract.end_date, today)
+        if not reminder_stage:
+            continue
+        contract_due.append(contract)
         recipients = [
             user
             for user in notification_manager_users("contracts")
@@ -227,7 +228,10 @@ def send_daily_operational_notifications():
         if contract.owner:
             recipients = [*recipients, contract.owner]
         queue_email_notification(
-            event_key=f"daily-contract-due:{today}:{contract.pk}",
+            event_key=(
+                f"contract-due:{contract.pk}:{contract.end_date:%Y-%m-%d}:"
+                f"{reminder_stage}"
+            ),
             event_type="contract_expiry",
             recipients=recipients,
             subject=f"合同到期提醒：{contract.name}",

@@ -39,10 +39,11 @@ const fileUploading = ref(false);
 const fileError = ref("");
 const documentType = ref("signed");
 const fileChange = ref("");
+const contractReminderDays = new Set([45, 30, 15, 7]);
 
 const form = reactive({
   contract_no: "", name: "", contract_type: "", supplier: "", office: "", category: "", department: "", owner: "",
-  status: "draft", start_date: "", end_date: "", amount: "", amount_description: "", renewal_notice_days: 30,
+  status: "draft", start_date: "", end_date: "", amount: "", amount_description: "",
   auto_renew: false, payment_method: "", payment_terms: "", service_content: "", kingdee_code: "", external_id: "", notes: "",
 });
 const changeForm = reactive({
@@ -53,7 +54,7 @@ const changeForm = reactive({
 const due = computed(() => dueOnly.value ? rows.value : rows.value.filter((item) =>
   ["active", "expired"].includes(item.status)
   && item.days_to_expiry !== null
-  && item.days_to_expiry <= item.renewal_notice_days,
+  && (item.days_to_expiry <= 0 || contractReminderDays.has(item.days_to_expiry)),
 ));
 const activeAmount = computed(() => rows.value
   .filter((item) => item.status === "active" && !item.supplement_of)
@@ -123,12 +124,12 @@ function assignForm(item?: Contract) {
     contract_no: item.contract_no, name: item.name, contract_type: item.contract_type || "",
     supplier: item.supplier || "", office: item.office || "", category: item.category || "", department: item.department || "", owner: item.owner || "",
     status: item.status, start_date: item.start_date || "", end_date: item.end_date || "", amount: item.amount, amount_description: item.amount_description || "",
-    renewal_notice_days: item.renewal_notice_days, auto_renew: item.auto_renew,
+    auto_renew: item.auto_renew,
     payment_method: item.payment_method || "", payment_terms: item.payment_terms || "", service_content: item.service_content || "",
     kingdee_code: item.kingdee_code, external_id: item.external_id, notes: item.notes,
   } : {
     contract_no: "", name: "", contract_type: "", supplier: "", office: "", category: "", department: "", owner: "",
-    status: "draft", start_date: "", end_date: "", amount: "", amount_description: "", renewal_notice_days: 30,
+    status: "draft", start_date: "", end_date: "", amount: "", amount_description: "",
     auto_renew: false, payment_method: "", payment_terms: "", service_content: "", kingdee_code: "", external_id: "", notes: "",
   });
 }
@@ -358,7 +359,7 @@ onMounted(load);
               <label><span>结束日期</span><input v-model="form.end_date" type="date" /></label>
               <label><span>合同金额</span><input v-model="form.amount" type="number" min="0" step="0.01" required /></label>
               <label class="wide"><span>费用金额说明</span><input v-model="form.amount_description" placeholder="例如：按实际结算、3500 元/月" /></label>
-              <label><span>到期提前提醒</span><span class="contract-input-suffix"><input v-model.number="form.renewal_notice_days" type="number" min="1" /><b>天</b></span></label>
+              <div class="contract-reminder-hint"><strong>提醒规则</strong><span>到期前 45、30、15、7 天各提醒一次；到期当天及逾期后每天提醒。</span></div>
               <label class="contract-renew-toggle"><input v-model="form.auto_renew" type="checkbox" /><span><strong>合同约定自动续期</strong></span></label>
             </div>
           </section>
