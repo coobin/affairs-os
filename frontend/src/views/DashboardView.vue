@@ -41,8 +41,8 @@ const taskItems = computed(() => {
   }
   if (props.scopes.includes("vehicles")) {
     items.push({
-      label: "车辆保险到期",
-      hint: "未来 30 天或已到期",
+      label: "车辆保险/年检到期",
+      hint: "到期前45/30/15/7天、当天及逾期每日",
       count: data.value.admin_tasks.vehicle_insurance_due,
       path: "/vehicles?tab=vehicles&insurance_due=1",
     });

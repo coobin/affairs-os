@@ -38,7 +38,7 @@ from .imports import (
     summarize_import,
     summarize_inventory_import,
 )
-from .contract_reminders import contract_reminder_dates
+from .contract_reminders import expiry_reminder_dates
 from .models import (
     Asset,
     AssetCategory,
@@ -644,13 +644,17 @@ class DashboardView(APIView):
                     supplement_of__isnull=True,
                 ).filter(
                     Q(end_date__lte=today)
-                    | Q(end_date__in=contract_reminder_dates(today))
+                    | Q(end_date__in=expiry_reminder_dates(today))
                 ),
             ).distinct()
         vehicle_insurance_due = Vehicle.objects.none()
         if user_can_manage(request.user, "vehicles"):
+            reminder_dates = expiry_reminder_dates(today)
             vehicle_insurance_due = Vehicle.objects.filter(
-                insurance_expires_at__lte=today + timedelta(days=30),
+                Q(insurance_expires_at__lte=today)
+                | Q(inspection_expires_at__lte=today)
+                | Q(insurance_expires_at__in=reminder_dates)
+                | Q(inspection_expires_at__in=reminder_dates)
             ).exclude(status=Vehicle.Status.RETIRED)
         return Response(
             {
@@ -1874,7 +1878,7 @@ class ContractViewSet(viewsets.ModelViewSet):
                 status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
             ).filter(
                 Q(end_date__lte=today)
-                | Q(end_date__in=contract_reminder_dates(today))
+                | Q(end_date__in=expiry_reminder_dates(today))
             )
         return queryset.distinct()
 
@@ -2133,8 +2137,13 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if status_value:
             queryset = queryset.filter(status=status_value)
         if insurance_due in {"1", "true", "yes"}:
+            today = timezone.localdate()
+            reminder_dates = expiry_reminder_dates(today)
             queryset = queryset.filter(
-                insurance_expires_at__lte=timezone.localdate() + timedelta(days=30),
+                Q(insurance_expires_at__lte=today)
+                | Q(inspection_expires_at__lte=today)
+                | Q(insurance_expires_at__in=reminder_dates)
+                | Q(inspection_expires_at__in=reminder_dates)
             ).exclude(status=Vehicle.Status.RETIRED)
         return queryset
 

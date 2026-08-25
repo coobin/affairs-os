@@ -2107,6 +2107,46 @@ class EmailNotificationTests(TestCase):
         contract.refresh_from_db()
         self.assertEqual(contract.status, Contract.Status.EXPIRED)
 
+    def test_vehicle_due_email_uses_fixed_milestones_and_daily_overdue(self):
+        custodian = User.objects.create_user(
+            "vehicle-reminder-custodian",
+            password="pass",
+            email="vehicle-custodian@example.com",
+        )
+        vehicle = Vehicle.objects.create(
+            plate_number="粤BREM01",
+            name="证照节点车辆",
+            custodian=custodian,
+            insurance_expires_at=date(2026, 9, 30),
+            inspection_expires_at=date(2026, 9, 30),
+        )
+
+        for reminder_date in (
+            date(2026, 8, 16),  # 提前45天，保险和年检合并一封
+            date(2026, 8, 17),  # 不在提醒节点
+            date(2026, 8, 31),  # 提前30天
+            date(2026, 9, 15),  # 提前15天
+            date(2026, 9, 23),  # 提前7天
+            date(2026, 9, 23),  # 同一天不重复
+        ):
+            with patch("assets.tasks.timezone.localdate", return_value=reminder_date):
+                send_daily_operational_notifications()
+        notifications = EmailNotification.objects.filter(
+            event_type="vehicle_document_due",
+            recipient_email=custodian.email,
+        )
+        self.assertEqual(notifications.count(), 4)
+        self.assertIn("保险到期：2026-09-30", notifications.first().body)
+        self.assertIn("年检到期：2026-09-30", notifications.first().body)
+
+        vehicle.insurance_expires_at = date(2026, 8, 15)
+        vehicle.inspection_expires_at = date(2026, 8, 15)
+        vehicle.save(update_fields=["insurance_expires_at", "inspection_expires_at"])
+        for reminder_date in (date(2026, 8, 15), date(2026, 8, 16), date(2026, 8, 16)):
+            with patch("assets.tasks.timezone.localdate", return_value=reminder_date):
+                send_daily_operational_notifications()
+        self.assertEqual(notifications.count(), 6)
+
     def test_user_deactivation_sends_manager_email_once(self):
         self.asset.status = Asset.Status.ASSIGNED
         self.asset.assigned_to = self.requester
@@ -2941,8 +2981,9 @@ class AdministrativePhaseTests(TestCase):
             status=Contract.Status.COMPLETED, end_date=timezone.localdate() - timedelta(days=10),
         )
         due_vehicle = Vehicle.objects.create(
-            plate_number="粤BDUE01", name="保险待办车辆",
-            insurance_expires_at=timezone.localdate() + timedelta(days=5),
+            plate_number="粤BDUE01", name="证照待办车辆",
+            insurance_expires_at=timezone.localdate() + timedelta(days=10),
+            inspection_expires_at=timezone.localdate() + timedelta(days=7),
         )
         Vehicle.objects.create(
             plate_number="粤BRET01", name="已处置车辆", status=Vehicle.Status.RETIRED,

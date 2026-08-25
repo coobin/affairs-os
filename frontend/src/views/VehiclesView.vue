@@ -7,9 +7,9 @@ import type { Lookups, Supplier, Vehicle, VehicleDispatch, VehicleExpense } from
 const props = defineProps<{ lookups: Lookups | null; canManage: boolean; isSuperuser: boolean }>();
 type Tab = "dispatches" | "vehicles" | "expenses";
 const initialParams = new URLSearchParams(window.location.search);
-const insuranceDueOnly = ref(initialParams.get("insurance_due") === "1");
+const vehicleDueOnly = ref(initialParams.get("insurance_due") === "1");
 const requestedTab = initialParams.get("tab");
-const tab = ref<Tab>(props.canManage && (requestedTab === "vehicles" || insuranceDueOnly.value) ? "vehicles" : "dispatches");
+const tab = ref<Tab>(props.canManage && (requestedTab === "vehicles" || vehicleDueOnly.value) ? "vehicles" : "dispatches");
 const dispatches = ref<VehicleDispatch[]>([]);
 const vehicles = ref<Vehicle[]>([]);
 const expenses = ref<VehicleExpense[]>([]);
@@ -30,7 +30,7 @@ const pendingCount = computed(() => dispatches.value.filter((item) => item.statu
 
 function vehicleQueryPath() {
   const params = new URLSearchParams();
-  if (insuranceDueOnly.value) params.set("insurance_due", "1");
+  if (vehicleDueOnly.value) params.set("insurance_due", "1");
   const query = params.toString();
   return `/vehicles/${query ? `?${query}` : ""}`;
 }
@@ -81,7 +81,7 @@ function openVehicleEdit(item: Vehicle) {
   showVehicle.value = true;
 }
 async function clearInsuranceDueFilter() {
-  insuranceDueOnly.value = false;
+  vehicleDueOnly.value = false;
   window.history.replaceState({}, "", "/vehicles?tab=vehicles");
   await load();
 }
@@ -148,8 +148,8 @@ onMounted(load);
     <div v-if="error" class="error-block">{{ error }}</div>
     <section v-if="tab === 'dispatches'" class="ledger-panel"><table class="admin-table"><thead><tr><th>单号 / 申请人</th><th>行程</th><th>计划时间</th><th>车辆 / 驾驶员</th><th>状态</th><th></th></tr></thead><tbody><tr v-for="item in dispatches" :key="item.id"><td><strong>{{ item.request_no }}</strong><small>{{ item.requester_name }} · {{ item.department_name || '未设置部门' }}</small></td><td><strong>{{ item.destination }}</strong><small>{{ item.purpose }} · {{ item.passenger_count }} 人</small></td><td>{{ formatDate(item.planned_departure_at) }}<small>至 {{ formatDate(item.planned_return_at) }}</small></td><td>{{ item.vehicle_label || '待分配' }}<small>{{ item.driver_display || '待安排驾驶员' }}</small></td><td><span class="record-status" :data-status="item.status">{{ item.status_label }}</span></td><td><button v-if="canManage && ['pending','approved','dispatched','in_progress'].includes(item.status)" class="text-button" @click="openProcess(item)">处理</button><button v-else-if="['pending','approved'].includes(item.status)" class="text-button" @click="cancel(item)">取消</button></td></tr></tbody></table><div v-if="!dispatches.length" class="empty-state large">还没有用车申请。</div></section>
     <template v-else-if="tab === 'vehicles'">
-      <div v-if="insuranceDueOnly" class="panel-actions"><span>当前仅显示未来 30 天或已经到期的车辆保险</span><button class="text-button" @click="clearInsuranceDueFilter">显示全部车辆</button></div>
-      <section class="vehicle-cards"><article v-for="item in vehicles" :key="item.id"><header><span class="vehicle-plate">{{ item.plate_number }}</span><span class="record-status" :data-status="item.status">{{ item.status_label }}</span></header><h2>{{ item.name }}</h2><p>{{ [item.brand,item.model_name].filter(Boolean).join(' ') || '未设置品牌型号' }}</p><dl><div><dt>所属 / 用途</dt><dd>{{ item.company || '未设置' }}<small>{{ item.use_scope || '未设置使用范围' }}</small></dd></div><div><dt>初次登记</dt><dd>{{ item.registration_date || '未设置' }}<small>{{ item.asset_number || item.asset_card_code || '未设置资产编码' }}</small></dd></div><div><dt>保险到期</dt><dd>{{ item.insurance_expires_at || '未设置' }}<small>{{ item.insurer_name || '未设置保险公司' }}</small></dd></div><div><dt>里程 / 座位</dt><dd>{{ item.current_mileage.toLocaleString() }} km<small>{{ item.seats }} 座</small></dd></div></dl><label class="card-status-control"><span>调整车辆状态</span><select :value="item.status" @change="updateVehicleStatus(item,$event)"><option value="available">可用</option><option value="maintenance">维修保养</option><option value="suspended">停用</option><option value="retired">已处置</option></select></label><div class="vehicle-card-actions"><button v-if="canManage" class="secondary-button" @click="openVehicleEdit(item)">编辑</button><button v-if="isSuperuser" class="text-button danger" @click="deleteVehicle(item)">删除</button></div></article><div v-if="!vehicles.length" class="empty-state large">还没有登记车辆。</div></section>
+      <div v-if="vehicleDueOnly" class="panel-actions"><span>当前仅显示到期前45/30/15/7天、当天及逾期的车辆保险或年检</span><button class="text-button" @click="clearInsuranceDueFilter">显示全部车辆</button></div>
+      <section class="vehicle-cards"><article v-for="item in vehicles" :key="item.id"><header><span class="vehicle-plate">{{ item.plate_number }}</span><span class="record-status" :data-status="item.status">{{ item.status_label }}</span></header><h2>{{ item.name }}</h2><p>{{ [item.brand,item.model_name].filter(Boolean).join(' ') || '未设置品牌型号' }}</p><dl><div><dt>所属 / 用途</dt><dd>{{ item.company || '未设置' }}<small>{{ item.use_scope || '未设置使用范围' }}</small></dd></div><div><dt>初次登记</dt><dd>{{ item.registration_date || '未设置' }}<small>{{ item.asset_number || item.asset_card_code || '未设置资产编码' }}</small></dd></div><div><dt>保险到期</dt><dd>{{ item.insurance_expires_at || '未设置' }}<small>{{ item.insurer_name || '未设置保险公司' }}</small></dd></div><div><dt>年检到期</dt><dd>{{ item.inspection_expires_at || '未设置' }}</dd></div><div><dt>里程 / 座位</dt><dd>{{ item.current_mileage.toLocaleString() }} km<small>{{ item.seats }} 座</small></dd></div></dl><label class="card-status-control"><span>调整车辆状态</span><select :value="item.status" @change="updateVehicleStatus(item,$event)"><option value="available">可用</option><option value="maintenance">维修保养</option><option value="suspended">停用</option><option value="retired">已处置</option></select></label><div class="vehicle-card-actions"><button v-if="canManage" class="secondary-button" @click="openVehicleEdit(item)">编辑</button><button v-if="isSuperuser" class="text-button danger" @click="deleteVehicle(item)">删除</button></div></article><div v-if="!vehicles.length" class="empty-state large">还没有登记车辆。</div></section>
     </template>
     <section v-else class="ledger-panel"><div class="panel-actions"><button class="primary-button" @click="openExpenseNew">登记车辆事项</button></div><table class="admin-table"><thead><tr><th>日期</th><th>车辆</th><th>事项</th><th>服务商</th><th>里程 / 下次到期</th><th>金额</th><th></th></tr></thead><tbody><tr v-for="item in expenses" :key="item.id"><td>{{ item.occurred_on }}</td><td><strong>{{ item.vehicle_label }}</strong></td><td>{{ item.expense_type_label }}<small>{{ item.notes }}</small></td><td>{{ item.supplier_name || '未设置' }}</td><td>{{ item.odometer ? `${item.odometer.toLocaleString()} km` : '—' }}<small>{{ item.next_due_on || (item.next_due_mileage ? `${item.next_due_mileage} km` : '无下次提醒') }}</small></td><td><strong>{{ money(item.amount) }}</strong></td><td><button v-if="canManage" class="text-button" @click="openExpenseEdit(item)">编辑</button><button v-if="isSuperuser" class="text-button danger" @click="deleteExpense(item)">删除</button></td></tr></tbody></table></section>
 

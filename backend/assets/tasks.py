@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from .models import Asset, Contract, EmailNotification, Vehicle
 from .permissions import HIDDEN_SYSTEM_USERNAME, is_hidden_superuser
-from .contract_reminders import contract_reminder_stage
+from .contract_reminders import expiry_reminder_stage
 
 
 User = get_user_model()
@@ -188,35 +188,48 @@ def send_daily_operational_notifications():
             body=f"当前有以下借用资产超期：\n\n{manager_lines}\n\n请联系相关责任人处理。",
         )
 
-    vehicle_due = list(
-        Vehicle.objects.filter(
-            Q(insurance_expires_at__lte=today + timedelta(days=30))
-            | Q(inspection_expires_at__lte=today + timedelta(days=30))
-        ).exclude(status=Vehicle.Status.RETIRED).select_related("custodian")
-    )
-    for vehicle in vehicle_due:
+    vehicle_due = []
+    for vehicle in Vehicle.objects.filter(
+        Q(insurance_expires_at__isnull=False) | Q(inspection_expires_at__isnull=False)
+    ).exclude(status=Vehicle.Status.RETIRED).select_related("custodian"):
+        reminder_groups = defaultdict(list)
+        for label, expires_at in (
+            ("保险到期", vehicle.insurance_expires_at),
+            ("年检到期", vehicle.inspection_expires_at),
+        ):
+            if not expires_at:
+                continue
+            reminder_stage = expiry_reminder_stage(expires_at, today)
+            if reminder_stage:
+                reminder_groups[reminder_stage].append((label, expires_at))
+        if not reminder_groups:
+            continue
+        vehicle_due.append(vehicle)
         recipients = notification_manager_users("vehicles")
         if vehicle.custodian:
             recipients = [*recipients, vehicle.custodian]
-        due_parts = []
-        if vehicle.insurance_expires_at and vehicle.insurance_expires_at <= today + timedelta(days=30):
-            due_parts.append(f"保险到期：{vehicle.insurance_expires_at:%Y-%m-%d}")
-        if vehicle.inspection_expires_at and vehicle.inspection_expires_at <= today + timedelta(days=30):
-            due_parts.append(f"年检到期：{vehicle.inspection_expires_at:%Y-%m-%d}")
-        queue_email_notification(
-            event_key=f"daily-vehicle-due:{today}:{vehicle.pk}",
-            event_type="vehicle_document_due",
-            recipients=recipients,
-            subject=f"车辆证照到期提醒：{vehicle.plate_number}",
-            body=f"{vehicle.plate_number} · {vehicle.name}\n\n" + "\n".join(due_parts) + "\n\n请及时办理续保或年检。",
-        )
+        for reminder_stage, due_parts in reminder_groups.items():
+            expiry_signature = "|".join(
+                f"{label}:{expires_at:%Y-%m-%d}" for label, expires_at in due_parts
+            )
+            queue_email_notification(
+                event_key=f"vehicle-due:{vehicle.pk}:{reminder_stage}:{expiry_signature}",
+                event_type="vehicle_document_due",
+                recipients=recipients,
+                subject=f"车辆证照到期提醒：{vehicle.plate_number}",
+                body=(
+                    f"{vehicle.plate_number} · {vehicle.name}\n\n"
+                    + "\n".join(f"{label}：{expires_at:%Y-%m-%d}" for label, expires_at in due_parts)
+                    + "\n\n请及时办理续保或年检。"
+                ),
+            )
 
     contract_due = []
     for contract in Contract.objects.filter(
         status__in=[Contract.Status.ACTIVE, Contract.Status.EXPIRED],
         end_date__isnull=False,
     ).select_related("owner", "supplier"):
-        reminder_stage = contract_reminder_stage(contract.end_date, today)
+        reminder_stage = expiry_reminder_stage(contract.end_date, today)
         if not reminder_stage:
             continue
         contract_due.append(contract)
