@@ -2883,9 +2883,19 @@ label b {
 .operation-log-table td:nth-child(2) { min-width: 145px; }
 .operation-log-table td:nth-child(3) { min-width: 280px; }
 .operation-log-table td:nth-child(4) { min-width: 210px; }
+.email-log-table { min-width: 1100px; }
+.email-log-table td:nth-child(3) { min-width: 310px; }
+.email-log-table td:nth-child(4) { min-width: 110px; }
 .operation-result { display: inline-block; padding: 4px 8px; border-radius: 99px; font-size: .68rem; font-weight: 700; }
 .operation-result.success { color: var(--green); background: #e8f4ef; }
 .operation-result.failed { color: #a34138; background: #faece9; }
+.email-detail-modal { width: min(760px, 100%); }
+.email-detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 20px 28px 0; }
+.email-detail-meta > div { display: grid; gap: 5px; min-width: 0; }
+.email-detail-meta span { color: var(--ink-soft); font-size: .7rem; }
+.email-detail-meta strong { overflow-wrap: anywhere; font-size: .82rem; }
+.email-detail-body { max-height: 420px; margin: 20px 28px 28px; padding: 18px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; background: #f8fafb; color: var(--ink); font: .82rem/1.7 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.email-detail-error { margin: -10px 28px 26px; }
 .operation-log-empty { padding: 36px; color: var(--ink-soft); text-align: center; }
 .operation-log-pagination { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: .75rem; }
 .operation-log-pagination > div { display: flex; gap: 8px; }
@@ -2899,6 +2909,9 @@ label b {
   .operation-log-head > strong { font-size: .9rem; }
   .operation-log-filter-bar { grid-template-columns: 1fr; }
   .operation-log-pagination { align-items: flex-start; gap: 10px; }
+  .email-detail-meta { grid-template-columns: 1fr; padding: 18px 20px 0; }
+  .email-detail-body { margin: 18px 20px 22px; }
+  .email-detail-error { margin-left: 20px; margin-right: 20px; }
 }
 
 .manager-matrix-wrap {

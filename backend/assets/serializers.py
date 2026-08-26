@@ -23,6 +23,7 @@ from .models import (
     Department,
     EmployeeProfile,
     ExpenseCategory,
+    EmailNotification,
     InventoryItem,
     InventoryTransaction,
     Location,
@@ -126,6 +127,56 @@ class OperationLogSerializer(serializers.ModelSerializer):
             "occurred_at",
         )
         read_only_fields = fields
+
+
+EMAIL_EVENT_LABELS = {
+    "asset_returned": "资产归还通知",
+    "request_pending": "待处理申请",
+    "request_cancelled": "申请取消",
+    "loan_extended": "借用延期",
+    "loan_due_today": "借用当天到期",
+    "loan_due_today_summary": "借用当天到期汇总",
+    "loan_overdue": "借用超期",
+    "loan_overdue_summary": "借用超期汇总",
+    "vehicle_document_due": "车辆证照到期",
+    "contract_expiry": "合同到期",
+    "user_deactivated": "离职交接",
+    "vehicle_dispatch_pending": "待处理用车申请",
+    "purchase_request_pending": "待审批采购申请",
+}
+
+
+class EmailNotificationSerializer(serializers.ModelSerializer):
+    recipient_name = serializers.SerializerMethodField()
+    event_type_label = serializers.SerializerMethodField()
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = EmailNotification
+        fields = (
+            "id",
+            "event_type",
+            "event_type_label",
+            "recipient_name",
+            "recipient_email",
+            "subject",
+            "body",
+            "status",
+            "status_label",
+            "attempts",
+            "last_error",
+            "created_at",
+            "sent_at",
+        )
+        read_only_fields = fields
+
+    def get_recipient_name(self, obj):
+        if not obj.recipient_user:
+            return ""
+        return obj.recipient_user.get_full_name() or obj.recipient_user.username
+
+    def get_event_type_label(self, obj):
+        return EMAIL_EVENT_LABELS.get(obj.event_type, obj.event_type)
 
 
 class DepartmentSerializer(serializers.ModelSerializer):

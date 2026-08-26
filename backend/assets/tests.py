@@ -174,6 +174,29 @@ class OperationLogTests(TestCase):
         self.assertEqual(visible.data["results"][0]["target_label"], "IT-NB-009 · 测试电脑")
         self.assertEqual(visible.data["filters"]["users"][0]["username"], self.manager.username)
 
+    def test_only_superuser_can_view_email_records_and_body(self):
+        notification = EmailNotification.objects.create(
+            event_key="email-log-test",
+            event_type="asset_returned",
+            recipient_user=self.manager,
+            recipient_email="manager@example.com",
+            subject="资产归还通知：IT-TEST-001",
+            body="这是一封归还通知正文。",
+        )
+
+        denied = self.manager_client.get("/api/v1/settings/email-notifications/")
+        visible = self.super_client.get(
+            "/api/v1/settings/email-notifications/",
+            {"q": "归还通知正文"},
+        )
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(visible.status_code, 200)
+        self.assertEqual(visible.data["count"], 1)
+        self.assertEqual(visible.data["results"][0]["id"], notification.id)
+        self.assertEqual(visible.data["results"][0]["event_type_label"], "资产归还通知")
+        self.assertEqual(visible.data["results"][0]["body"], "这是一封归还通知正文。")
+
     @override_settings(LOCAL_LOGIN_USERNAME="operation-super")
     def test_successful_login_and_logout_are_logged_without_credentials(self):
         self.super_token.delete()
@@ -1935,6 +1958,30 @@ class EmailNotificationTests(TestCase):
         )
         self.assertEqual(issued.status_code, 200)
         self.assertFalse(EmailNotification.objects.exists())
+
+    def test_return_emails_previous_user_and_keeps_content_in_record(self):
+        assigned = perform_asset_action(
+            asset=self.asset,
+            action="assign",
+            actor=self.manager,
+            target_user=self.requester,
+        )
+        returned = perform_asset_action(
+            asset=assigned.asset,
+            action="return",
+            actor=self.manager,
+        )
+
+        self.assertEqual(returned.event.action, AssetEvent.Action.RETURNED)
+        notification = EmailNotification.objects.get(
+            event_type="asset_returned",
+            recipient_email="requester@example.com",
+        )
+        self.assertEqual(notification.recipient_user, self.requester)
+        self.assertIn("资产归还通知", notification.subject)
+        self.assertIn("你之前使用的资产已办理归还", notification.body)
+        self.assertIn(self.asset.asset_tag, notification.body)
+        self.assertIn("当前状态：在库", notification.body)
 
     def test_daily_task_queues_overdue_but_not_low_stock_reminders(self):
         self.asset.status = Asset.Status.LOANED

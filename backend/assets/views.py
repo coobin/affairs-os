@@ -53,6 +53,7 @@ from .models import (
     ContractChange,
     ContractType,
     Department,
+    EmailNotification,
     ExpenseCategory,
     InventoryItem,
     InventoryTransaction,
@@ -105,6 +106,7 @@ from .serializers import (
     ContractChangeSerializer,
     ContractTypeSerializer,
     DepartmentSerializer,
+    EmailNotificationSerializer,
     InventoryActionSerializer,
     InventoryItemSerializer,
     LocationSerializer,
@@ -885,6 +887,70 @@ class OperationLogView(APIView):
                 for row in OperationLog.objects.values("action", "action_label")
                 .order_by("action_label", "action")
                 .distinct()
+            ],
+        }
+        return response
+
+
+class EmailNotificationPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+
+class EmailNotificationView(APIView):
+    permission_classes = [IsSuperAdministrator]
+
+    def get(self, request):
+        queryset = EmailNotification.objects.select_related("recipient_user")
+        status_value = request.query_params.get("status", "").strip()
+        event_type = request.query_params.get("event_type", "").strip()
+        date_from = request.query_params.get("date_from", "").strip()
+        date_to = request.query_params.get("date_to", "").strip()
+        query = request.query_params.get("q", "").strip()
+
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        if event_type:
+            queryset = queryset.filter(event_type=event_type)
+        try:
+            if date_from:
+                queryset = queryset.filter(created_at__date__gte=date.fromisoformat(date_from))
+            if date_to:
+                queryset = queryset.filter(created_at__date__lte=date.fromisoformat(date_to))
+        except ValueError:
+            return Response({"message": "邮件记录日期格式不正确。"}, status=400)
+        if query:
+            queryset = queryset.filter(
+                Q(recipient_email__icontains=query)
+                | Q(recipient_user__username__icontains=query)
+                | Q(recipient_user__first_name__icontains=query)
+                | Q(recipient_user__last_name__icontains=query)
+                | Q(subject__icontains=query)
+                | Q(body__icontains=query)
+            )
+
+        paginator = EmailNotificationPagination()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+        response = paginator.get_paginated_response(
+            EmailNotificationSerializer(page, many=True).data
+        )
+        response.data["filters"] = {
+            "statuses": [
+                {"value": value, "label": label}
+                for value, label in EmailNotification.Status.choices
+            ],
+            "event_types": [
+                {
+                    "value": value,
+                    "label": EmailNotificationSerializer().get_event_type_label(
+                        EmailNotification(event_type=value)
+                    ),
+                }
+                for value in queryset.order_by()
+                .values_list("event_type", flat=True)
+                .distinct()
+                .order_by("event_type")
             ],
         }
         return response
