@@ -181,34 +181,51 @@ def notify_request_processed(asset_request: AssetRequest):
     if not requester or not requester.email:
         return []
 
-    asset = asset_request.assigned_asset
-    handled_by = asset_request.handled_by
-    needed_date = (
-        asset_request.needed_at.strftime("%Y-%m-%d")
-        if asset_request.needed_at
-        else "未设置"
+    return _queue_loan_completed_notification(
+        event_key=f"asset-request:{asset_request.pk}:fulfilled:borrower",
+        recipient=requester,
+        asset=asset_request.assigned_asset,
+        handled_by=asset_request.handled_by,
+        needed_at=asset_request.needed_at,
+        reason=asset_request.reason,
+        intro="你的借用申请已处理完成，以下设备已分配给你。",
     )
+
+
+def _queue_loan_completed_notification(
+    *,
+    event_key,
+    recipient,
+    asset,
+    handled_by,
+    needed_at=None,
+    reason="",
+    intro="你的借用已办理完成。",
+):
+    if not recipient or not recipient.email or not asset:
+        return []
+    needed_date = needed_at.strftime("%Y-%m-%d") if needed_at else "未设置"
     return_date = (
-        asset_request.expected_return_at.strftime("%Y-%m-%d")
-        if asset_request.expected_return_at
+        asset.expected_return_at.strftime("%Y-%m-%d")
+        if asset.expected_return_at
         else "未设置"
     )
     handler_name = _display_name(handled_by) if handled_by else "未记录"
     return queue_email_notification(
-        event_key=f"asset-request:{asset_request.pk}:fulfilled:borrower",
-        event_type="loan_request_fulfilled",
-        recipients=[requester],
-        subject=f"借用申请已办理：{asset.asset_tag} · {asset.name}",
+        event_key=event_key,
+        event_type="loan_fulfilled",
+        recipients=[recipient],
+        subject=f"借用已办理：{asset.asset_tag} · {asset.name}",
         body=(
-            f"{_display_name(requester)}，你的借用申请已处理完成，以下设备已分配给你。\n\n"
+            f"{_display_name(recipient)}，{intro}\n\n"
             f"设备：{asset.asset_tag} · {asset.name}\n"
-            f"用途说明：{asset_request.reason or '未填写'}\n"
+            f"用途说明：{reason or '未填写'}\n"
             f"借用日期：{needed_date}\n"
             f"预计归还：{return_date}\n"
             f"处理人：{handler_name}\n"
-            "当前状态：借用中\n\n"
+            f"当前状态：{asset.get_status_display()}\n\n"
             "请妥善保管设备，并在预计归还日期前归还。如需延期，请提前联系资产管理员办理。"
-        )
+        ),
     )
 
 
@@ -227,7 +244,19 @@ def notify_request_cancelled(asset_request: AssetRequest):
 
 
 def notify_asset_action(event: AssetEvent):
-    # 资产领用、借用不向普通用户发送邮件；归还和借用延期向相关用户发送确认邮件。
+    # 资产领用不向普通用户发送邮件；借用、归还和延期向相关用户发送确认邮件。
+    if event.action == AssetEvent.Action.LOANED:
+        borrower = event.to_user
+        if borrower and borrower.email:
+            return _queue_loan_completed_notification(
+                event_key=f"asset-loaned:{event.pk}",
+                recipient=borrower,
+                asset=event.asset,
+                handled_by=event.actor,
+                needed_at=event.happened_at.date(),
+                reason=event.notes,
+                intro="你的借用已处理完成，以下设备已交由你使用。",
+            )
     if event.action == AssetEvent.Action.RETURNED:
         previous_user = event.from_user
         if previous_user and previous_user.email:

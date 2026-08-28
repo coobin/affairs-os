@@ -1919,13 +1919,32 @@ class EmailNotificationTests(TestCase):
         )
         self.assertEqual(fulfilled.status_code, 200)
         requester_notification = EmailNotification.objects.get(
-            event_type="loan_request_fulfilled",
+            event_type="loan_fulfilled",
             recipient_email="requester@example.com",
         )
-        self.assertIn("借用申请已办理", requester_notification.subject)
+        self.assertIn("借用已办理", requester_notification.subject)
         self.assertIn("IT-NB-2026-301", requester_notification.body)
         self.assertIn("预计归还", requester_notification.body)
         self.assertIn("请妥善保管设备", requester_notification.body)
+
+    def test_direct_loan_emails_borrower(self):
+        result = perform_asset_action(
+            asset=self.asset,
+            action="loan",
+            actor=self.manager,
+            target_user=self.requester,
+            expected_return_at=date.today() + timedelta(days=7),
+            notes="出差使用",
+        )
+
+        self.assertEqual(result.event.action, AssetEvent.Action.LOANED)
+        notification = EmailNotification.objects.get(
+            event_type="loan_fulfilled",
+            recipient_email="requester@example.com",
+        )
+        self.assertIn("借用已办理", notification.subject)
+        self.assertIn("出差使用", notification.body)
+        self.assertIn("当前状态：借用中", notification.body)
 
     def test_email_task_marks_delivery_sent(self):
         notification = EmailNotification.objects.create(
