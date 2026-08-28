@@ -157,7 +157,7 @@ onMounted(load);
         <label v-if="selectedOption?.item_type === 'inventory'"><span>领用数量</span><input v-model.number="form.quantity" type="number" min="1" :max="selectedOption.available_count" required /></label>
         <label><span>领用时间</span><input v-model="form.needed_at" type="date" :min="today" required /></label>
         <label v-if="form.request_type === 'loan'"><span>预计归还</span><input v-model="form.expected_return_at" type="date" :min="form.needed_at || today" required /></label>
-        <label><span>用途说明{{ form.request_type === 'assign' ? '（选填）' : '' }}</span><textarea v-model="form.reason" rows="3" :required="form.request_type === 'loan'" :placeholder="form.request_type === 'assign' ? '可选填领用用途' : '请说明借用用途'"></textarea></label>
+        <label><span>用途说明<template v-if="form.request_type === 'assign'">（选填）</template><b v-else>*</b></span><textarea v-model="form.reason" rows="3" :required="form.request_type === 'loan'" :placeholder="form.request_type === 'assign' ? '可选填领用用途' : '请说明借用用途'"></textarea></label>
         <p v-if="!devices.length" class="form-error">当前没有可申请的资产或库存物品。</p>
         <p v-if="error" class="form-error">{{ error }}</p><p v-if="notice" class="form-success">{{ notice }}</p>
         <button class="primary-button full" :disabled="saving || !devices.length || !selectedOption">{{ saving ? "正在提交…" : "提交申请" }}</button>

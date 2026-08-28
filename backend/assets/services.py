@@ -152,6 +152,8 @@ def perform_asset_action(
         raise ValidationError({"target_user_id": "领用或借用时必须选择责任人。"})
     if action == "loan" and expected_return_at is None:
         raise ValidationError({"expected_return_at": "借用时必须填写预计归还日期。"})
+    if action == "loan" and not str(notes or "").strip():
+        raise ValidationError({"notes": "借用时必须填写用途说明。"})
     if expected_return_at and expected_return_at < date.today():
         raise ValidationError({"expected_return_at": "预计归还日期不能早于今天。"})
 

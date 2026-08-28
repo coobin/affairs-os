@@ -784,6 +784,14 @@ class AssetActionSerializer(serializers.Serializer):
     requires_inspection = serializers.BooleanField(default=False)
     notes = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
+    def validate(self, attrs):
+        if attrs.get("action") == "loan":
+            notes = str(attrs.get("notes") or "").strip()
+            if not notes:
+                raise serializers.ValidationError({"notes": "借用时必须填写用途说明。"})
+            attrs["notes"] = notes
+        return attrs
+
     def save(self, **kwargs):
         return perform_asset_action(
             asset=self.context["asset"],

@@ -261,6 +261,18 @@ class AssetActionServiceTests(TestCase):
                 action="loan",
                 actor=self.admin,
                 target_user=self.employee,
+                notes="出差使用",
+            )
+
+    def test_loan_requires_usage_notes(self):
+        with self.assertRaisesMessage(ValidationError, "借用时必须填写用途说明"):
+            perform_asset_action(
+                asset=self.asset,
+                action="loan",
+                actor=self.admin,
+                target_user=self.employee,
+                expected_return_at=date.today() + timedelta(days=7),
+                notes="   ",
             )
 
     def test_non_requestable_asset_can_still_be_managed_directly(self):
@@ -433,6 +445,7 @@ class AssetApiTests(TestCase):
                 "action": "loan",
                 "target_user_id": self.employee.pk,
                 "expected_return_at": loan_due.isoformat(),
+                "notes": "出差使用",
             },
             format="json",
         )
@@ -455,6 +468,22 @@ class AssetApiTests(TestCase):
             action=AssetEvent.Action.EXTENDED,
         ).latest("id")
         self.assertEqual(event.to_status, Asset.Status.LOANED)
+
+    def test_direct_loan_api_requires_usage_notes(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            f"/api/v1/assets/{self.asset.pk}/actions/",
+            {
+                "action": "loan",
+                "target_user_id": self.employee.pk,
+                "expected_return_at": (date.today() + timedelta(days=7)).isoformat(),
+                "notes": "   ",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("借用时必须填写用途说明", json.dumps(response.data, ensure_ascii=False))
+        self.assertFalse(AssetEvent.objects.filter(asset=self.asset).exists())
 
     def test_extend_requires_loaned_asset(self):
         self.client.force_authenticate(self.admin)
@@ -1507,6 +1536,7 @@ class ScopedPermissionTests(TestCase):
             request_type=AssetRequest.RequestType.LOAN,
             requested_name="显示器",
             expected_return_at=date.today() + timedelta(days=3),
+            reason="会议演示使用",
         )
 
         listed = self.client.get("/api/v1/requests/")

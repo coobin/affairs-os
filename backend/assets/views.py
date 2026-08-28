@@ -1088,13 +1088,16 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
             return Response({"message": "选择的设备已不可分配。"}, status=400)
         if asset.category.name != asset_request.requested_name:
             return Response({"message": "请分配与申请类型一致的设备。"}, status=400)
+        action_notes = str(request.data.get("manager_notes") or "").strip()
+        if asset_request.request_type == AssetRequest.RequestType.LOAN:
+            action_notes = action_notes or str(asset_request.reason or "").strip()
         perform_asset_action(
             asset=asset,
             action=asset_request.request_type,
             actor=request.user,
             target_user=asset_request.requester,
             expected_return_at=asset_request.expected_return_at,
-            notes=str(request.data.get("manager_notes") or "").strip(),
+            notes=action_notes,
             send_notification=False,
         )
         asset_request.status = AssetRequest.Status.FULFILLED

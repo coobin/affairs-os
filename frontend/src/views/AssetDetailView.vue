@@ -382,8 +382,8 @@ onBeforeUnmount(clearImagePreviews);
             <input v-model="actionForm.expected_return_at" type="date" required />
           </label>
           <label>
-            <span>办理说明</span>
-            <textarea v-model="actionForm.notes" rows="4" placeholder="填写交接情况、故障或处置依据"></textarea>
+            <span>{{ actionType === 'loan' ? '用途说明' : '办理说明' }} <b v-if="actionType === 'loan'">*</b></span>
+            <textarea v-model="actionForm.notes" rows="4" :required="actionType === 'loan'" :placeholder="actionType === 'loan' ? '请说明本次借用用途' : '填写交接情况、故障或处置依据'"></textarea>
           </label>
           <p v-if="actionError" class="form-error">{{ actionError }}</p>
           <div class="modal-actions">
