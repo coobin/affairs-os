@@ -1886,7 +1886,7 @@ class EmailNotificationTests(TestCase):
             status=Asset.Status.AVAILABLE,
         )
 
-    def test_request_emails_only_go_to_managers(self):
+    def test_loan_fulfillment_emails_requester_after_manager_processing(self):
         requester_client = APIClient()
         requester_client.force_authenticate(self.requester)
         created = requester_client.post(
@@ -1918,7 +1918,14 @@ class EmailNotificationTests(TestCase):
             format="json",
         )
         self.assertEqual(fulfilled.status_code, 200)
-        self.assertFalse(EmailNotification.objects.filter(recipient_email="requester@example.com").exists())
+        requester_notification = EmailNotification.objects.get(
+            event_type="loan_request_fulfilled",
+            recipient_email="requester@example.com",
+        )
+        self.assertIn("借用申请已办理", requester_notification.subject)
+        self.assertIn("IT-NB-2026-301", requester_notification.body)
+        self.assertIn("预计归还", requester_notification.body)
+        self.assertIn("请妥善保管设备", requester_notification.body)
 
     def test_email_task_marks_delivery_sent(self):
         notification = EmailNotification.objects.create(

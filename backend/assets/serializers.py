@@ -133,6 +133,7 @@ EMAIL_EVENT_LABELS = {
     "asset_returned": "资产归还通知",
     "request_pending": "待处理申请",
     "request_cancelled": "申请取消",
+    "loan_request_fulfilled": "借用办理完成",
     "loan_extended": "借用延期",
     "loan_due_today": "借用当天到期",
     "loan_due_today_summary": "借用当天到期汇总",

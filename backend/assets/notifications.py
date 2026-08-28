@@ -169,8 +169,47 @@ def notify_request_submitted(asset_request: AssetRequest):
 
 
 def notify_request_processed(asset_request: AssetRequest):
-    # 普通用户不接收领用、借用审批结果；仅借用超期时提醒用户。
-    return []
+    # 领用不发送确认邮件；借用办结后通知申请人，驳回等其他处理结果不发送。
+    if (
+        asset_request.status != AssetRequest.Status.FULFILLED
+        or asset_request.request_type != AssetRequest.RequestType.LOAN
+        or not asset_request.assigned_asset
+    ):
+        return []
+
+    requester = asset_request.requester
+    if not requester or not requester.email:
+        return []
+
+    asset = asset_request.assigned_asset
+    handled_by = asset_request.handled_by
+    needed_date = (
+        asset_request.needed_at.strftime("%Y-%m-%d")
+        if asset_request.needed_at
+        else "未设置"
+    )
+    return_date = (
+        asset_request.expected_return_at.strftime("%Y-%m-%d")
+        if asset_request.expected_return_at
+        else "未设置"
+    )
+    handler_name = _display_name(handled_by) if handled_by else "未记录"
+    return queue_email_notification(
+        event_key=f"asset-request:{asset_request.pk}:fulfilled:borrower",
+        event_type="loan_request_fulfilled",
+        recipients=[requester],
+        subject=f"借用申请已办理：{asset.asset_tag} · {asset.name}",
+        body=(
+            f"{_display_name(requester)}，你的借用申请已处理完成，以下设备已分配给你。\n\n"
+            f"设备：{asset.asset_tag} · {asset.name}\n"
+            f"用途说明：{asset_request.reason or '未填写'}\n"
+            f"借用日期：{needed_date}\n"
+            f"预计归还：{return_date}\n"
+            f"处理人：{handler_name}\n"
+            "当前状态：借用中\n\n"
+            "请妥善保管设备，并在预计归还日期前归还。如需延期，请提前联系资产管理员办理。"
+        )
+    )
 
 
 def notify_request_cancelled(asset_request: AssetRequest):
