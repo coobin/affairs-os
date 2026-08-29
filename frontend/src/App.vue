@@ -23,11 +23,18 @@ import RequestsView from "./views/RequestsView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import SuppliersView from "./views/SuppliersView.vue";
 
+const initialQuery = new URLSearchParams(window.location.search);
+const initialOidcCode = initialQuery.get("oidc_code");
+const initialOidcError = initialQuery.get("oidc_error");
+const isLocalLoginPath = window.location.pathname === "/passwordLogin";
+const hasSession = Boolean(getStoredUser() && getToken());
+const shouldRedirectToOidc = !hasSession && !isLocalLoginPath && !initialOidcCode && !initialOidcError;
 const user = ref<User | null>(getStoredUser());
 const path = ref(`${window.location.pathname}${window.location.search}`);
 const lookups = ref<Lookups | null>(null);
-const authLoading = ref(false);
+const authLoading = ref(Boolean(initialOidcCode));
 const authError = ref("");
+const authRedirecting = ref(shouldRedirectToOidc || Boolean(initialOidcCode));
 
 function hasScope(scope: string) {
   return Boolean(user.value?.management_scopes?.includes(scope));
@@ -107,6 +114,11 @@ async function logout() {
   navigate("/");
 }
 
+function redirectToOidc() {
+  authRedirecting.value = true;
+  window.location.replace("/api/v1/auth/oidc/login/");
+}
+
 function onSessionExpired() {
   user.value = null;
   lookups.value = null;
@@ -115,9 +127,12 @@ function onSessionExpired() {
 onMounted(async () => {
   window.addEventListener("popstate", onPopState);
   window.addEventListener("session-expired", onSessionExpired);
-  const query = new URLSearchParams(window.location.search);
-  const oidcCode = query.get("oidc_code");
-  authError.value = query.get("oidc_error") || "";
+  const oidcCode = initialOidcCode;
+  authError.value = initialOidcError || "";
+  if (shouldRedirectToOidc) {
+    redirectToOidc();
+    return;
+  }
   if (oidcCode) {
     authLoading.value = true;
     try {
@@ -134,6 +149,7 @@ onMounted(async () => {
       authError.value = error instanceof Error ? error.message : "登录未完成，请重试。";
       clearSession();
       user.value = null;
+      authRedirecting.value = false;
       window.history.replaceState({}, "", "/");
       path.value = "/";
     } finally {
@@ -163,7 +179,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <LoginView v-if="!user" :error="authError" :loading="authLoading" />
+  <LoginView v-if="!user && !authRedirecting" :error="authError" :loading="authLoading" />
+  <main v-else-if="!user" class="auth-redirect-state" aria-live="polite">
+    {{ initialOidcCode ? "正在完成统一认证…" : "正在跳转到统一认证…" }}
+  </main>
 
   <div v-else class="app-shell">
     <header class="masthead">
