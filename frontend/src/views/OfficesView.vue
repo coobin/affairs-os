@@ -367,6 +367,15 @@ function dateSpan(start?: string | null, end?: string | null) {
   return `${start || "—"} 至 ${end || "—"}`;
 }
 
+function containDetailScroll(event: WheelEvent) {
+  if (event.ctrlKey || event.metaKey || event.deltaY === 0) return;
+
+  const modal = event.currentTarget as HTMLElement;
+  const atTop = modal.scrollTop <= 0;
+  const atBottom = modal.scrollTop + modal.clientHeight >= modal.scrollHeight - 1;
+  if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) event.preventDefault();
+}
+
 onMounted(load);
 </script>
 
@@ -519,7 +528,7 @@ onMounted(load);
     </div>
 
     <div v-if="selectedOffice" class="modal-backdrop" @click.self="selectedOffice = null">
-      <section class="modal-panel office-detail-modal">
+      <section class="modal-panel office-detail-modal" @wheel="containDetailScroll">
         <header class="modal-header office-detail-header">
           <div><p class="eyebrow">{{ selectedOffice.code }}</p><h2>{{ selectedOffice.name }}</h2><p>{{ selectedOffice.region }} · {{ selectedOffice.city }} · {{ statusText(selectedOffice) }}</p></div>
           <button type="button" class="icon-button" aria-label="关闭" @click="selectedOffice = null"><AppIcon name="close" /></button>
@@ -670,7 +679,7 @@ onMounted(load);
 .resident-warning { margin: 0; padding: 10px 12px; border-radius: 8px; color: #80501a; background: #fff3e5; font-size: 12px; line-height: 1.6; }
 .resident-warning strong { margin-right: 7px; }
 .office-form-footer { position: sticky; z-index: 2; bottom: 0; display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, 0.96); backdrop-filter: blur(10px); }
-.office-detail-modal { width: min(1040px, 96vw); }
+.office-detail-modal { width: min(1040px, 96vw); overscroll-behavior-y: contain; scrollbar-gutter: stable; }
 .office-detail-loading { display: grid; min-height: 340px; place-items: center; color: var(--ink-soft); }
 .office-detail-error { margin: 24px; }
 .office-detail-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); align-items: start; gap: 18px; padding: 22px 24px 12px; background: #f5f8f9; }
