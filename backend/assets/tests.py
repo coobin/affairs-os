@@ -1932,6 +1932,7 @@ class EmailNotificationTests(TestCase):
         )
 
     def test_loan_fulfillment_emails_requester_after_manager_processing(self):
+        expected_return = date.today() + timedelta(days=5)
         requester_client = APIClient()
         requester_client.force_authenticate(self.requester)
         created = requester_client.post(
@@ -1940,7 +1941,7 @@ class EmailNotificationTests(TestCase):
                 "request_type": "loan",
                 "requested_name": "笔记本电脑",
                 "needed_at": date.today(),
-                "expected_return_at": date.today() + timedelta(days=5),
+                "expected_return_at": expected_return,
                 "reason": "出差",
             },
             format="json",
@@ -1963,13 +1964,15 @@ class EmailNotificationTests(TestCase):
             format="json",
         )
         self.assertEqual(fulfilled.status_code, 200)
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.expected_return_at, expected_return)
         requester_notification = EmailNotification.objects.get(
             event_type="loan_fulfilled",
             recipient_email="requester@example.com",
         )
         self.assertIn("借用已办理", requester_notification.subject)
         self.assertIn("IT-NB-2026-301", requester_notification.body)
-        self.assertIn("预计归还", requester_notification.body)
+        self.assertIn(f"预计归还：{expected_return:%Y-%m-%d}", requester_notification.body)
         self.assertIn("请妥善保管设备", requester_notification.body)
         self.assertNotIn("当前状态：", requester_notification.body)
 

@@ -1091,7 +1091,7 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
         action_notes = str(request.data.get("manager_notes") or "").strip()
         if asset_request.request_type == AssetRequest.RequestType.LOAN:
             action_notes = action_notes or str(asset_request.reason or "").strip()
-        perform_asset_action(
+        action_result = perform_asset_action(
             asset=asset,
             action=asset_request.request_type,
             actor=request.user,
@@ -1101,7 +1101,7 @@ class AssetRequestViewSet(viewsets.ModelViewSet):
             send_notification=False,
         )
         asset_request.status = AssetRequest.Status.FULFILLED
-        asset_request.assigned_asset = asset
+        asset_request.assigned_asset = action_result.asset
         asset_request.handled_by = request.user
         asset_request.handled_at = timezone.now()
         asset_request.manager_notes = str(request.data.get("manager_notes") or "").strip()
