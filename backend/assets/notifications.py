@@ -223,7 +223,7 @@ def _queue_loan_completed_notification(
             f"借用日期：{needed_date}\n"
             f"预计归还：{return_date}\n"
             f"处理人：{handler_name}\n"
-            f"当前状态：{asset.get_status_display()}\n\n"
+            "\n"
             "请妥善保管设备，并在预计归还日期前归还。如需延期，请提前联系资产管理员办理。"
         ),
     )

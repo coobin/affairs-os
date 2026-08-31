@@ -12,7 +12,12 @@ const myLoanedAssets = ref<Asset[]>([]);
 const devices = ref<DeviceOption[]>([]);
 const candidates = reactive<Record<number, Asset[]>>({});
 const selection = reactive<Record<number, number | "">>({});
-const form = reactive({ request_type: "assign", needed_at: "", expected_return_at: "", quantity: 1, reason: "" });
+const today = (() => {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+})();
+const form = reactive({ request_type: "assign", needed_at: today, expected_return_at: "", quantity: 1, reason: "" });
 const itemSearch = ref("");
 const selectedOption = ref<DeviceOption | null>(null);
 const searchFocused = ref(false);
@@ -25,7 +30,6 @@ const managerMode = ref<"manage" | "apply">("manage");
 const isManaging = computed(() => props.canManage && managerMode.value === "manage");
 const pending = computed(() => requests.value.filter((item) => item.status === "pending"));
 const history = computed(() => requests.value.filter((item) => item.status !== "pending"));
-const today = new Date().toISOString().slice(0, 10);
 const searchableOptions = computed(() => {
   const query = itemSearch.value.trim().toLowerCase();
   return devices.value
@@ -93,7 +97,7 @@ async function submit() {
       }),
     });
     form.reason = "";
-    form.needed_at = "";
+    form.needed_at = today;
     form.expected_return_at = "";
     clearOption();
     notice.value = "申请已提交，管理员处理后会通知你。";
@@ -123,6 +127,7 @@ async function reject(item: AssetRequest) { await api(`/requests/${item.id}/reje
 async function cancel(item: AssetRequest) { await api(`/requests/${item.id}/cancel/`, { method: "POST", body: JSON.stringify({}) }); await load(); }
 
 watch(() => form.request_type, () => {
+  if (form.request_type === "loan" && !form.needed_at) form.needed_at = today;
   if (form.request_type === "loan" && selectedOption.value?.item_type === "inventory") clearOption();
 });
 onMounted(load);
@@ -155,8 +160,8 @@ onMounted(load);
           <small v-if="selectedOption" class="selected-request-item"><b>{{ selectedOption.item_type === 'asset' ? '资产' : '库存' }}</b>{{ selectedOption.description }} · 可申请 {{ selectedOption.available_count }} {{ selectedOption.unit }}</small>
         </label>
         <label v-if="selectedOption?.item_type === 'inventory'"><span>领用数量</span><input v-model.number="form.quantity" type="number" min="1" :max="selectedOption.available_count" required /></label>
-        <label><span>领用时间</span><input v-model="form.needed_at" type="date" :min="today" required /></label>
-        <label v-if="form.request_type === 'loan'"><span>预计归还</span><input v-model="form.expected_return_at" type="date" :min="form.needed_at || today" required /></label>
+        <label><span>{{ form.request_type === 'loan' ? '借用日期' : '领用时间' }}</span><input v-model="form.needed_at" type="date" :min="today" required /></label>
+        <label v-if="form.request_type === 'loan'"><span>预计归还 <b>*</b></span><input v-model="form.expected_return_at" type="date" :min="form.needed_at || today" required /></label>
         <label><span>用途说明<template v-if="form.request_type === 'assign'">（选填）</template><b v-else>*</b></span><textarea v-model="form.reason" rows="3" :required="form.request_type === 'loan'" :placeholder="form.request_type === 'assign' ? '可选填领用用途' : '请说明借用用途'"></textarea></label>
         <p v-if="!devices.length" class="form-error">当前没有可申请的资产或库存物品。</p>
         <p v-if="error" class="form-error">{{ error }}</p><p v-if="notice" class="form-success">{{ notice }}</p>

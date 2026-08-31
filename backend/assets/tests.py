@@ -1799,6 +1799,21 @@ class AssetRequestWorkflowTests(TestCase):
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.data["reason"], "")
 
+    def test_loan_request_requires_expected_return_date(self):
+        self.client.force_authenticate(self.employee)
+        response = self.client.post(
+            "/api/v1/requests/",
+            {
+                "request_type": "loan",
+                "requested_name": "笔记本电脑",
+                "needed_at": date.today(),
+                "reason": "临时出差使用",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("expected_return_at", response.data["errors"])
+
     def test_loan_request_still_requires_reason(self):
         self.client.force_authenticate(self.employee)
         response = self.client.post(
@@ -1956,6 +1971,7 @@ class EmailNotificationTests(TestCase):
         self.assertIn("IT-NB-2026-301", requester_notification.body)
         self.assertIn("预计归还", requester_notification.body)
         self.assertIn("请妥善保管设备", requester_notification.body)
+        self.assertNotIn("当前状态：", requester_notification.body)
 
     def test_direct_loan_emails_borrower(self):
         result = perform_asset_action(
@@ -1974,7 +1990,7 @@ class EmailNotificationTests(TestCase):
         )
         self.assertIn("借用已办理", notification.subject)
         self.assertIn("出差使用", notification.body)
-        self.assertIn("当前状态：借用中", notification.body)
+        self.assertNotIn("当前状态：", notification.body)
 
     def test_email_task_marks_delivery_sent(self):
         notification = EmailNotification.objects.create(
