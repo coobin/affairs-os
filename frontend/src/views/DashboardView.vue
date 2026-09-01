@@ -165,7 +165,7 @@ onMounted(async () => {
         <aside class="quick-panel">
           <p class="eyebrow">快速办理</p>
           <h2>从一个动作开始</h2>
-          <button @click="emit('navigate', '/assets')"><AppIcon name="asset" />领用或归还</button>
+          <button @click="emit('navigate', '/assets')"><AppIcon name="asset" />借用或归还</button>
           <button @click="emit('navigate', '/assets/new')"><AppIcon name="plus" />登记新到资产</button>
         </aside>
       </section>

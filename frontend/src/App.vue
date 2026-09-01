@@ -45,7 +45,7 @@ const moduleEnabled = (code: string) =>
   lookups.value?.enabled_modules?.includes(code) ?? true;
 const navItems = computed(() => [
   ...(user.value?.management_scopes?.length ? [{ path: "/", label: "首页", icon: "home" }] : []),
-  ...(moduleEnabled("assets") || moduleEnabled("inventory") ? [{ path: "/requests", label: "领用借用", icon: "request" }] : []),
+  ...(moduleEnabled("assets") || moduleEnabled("inventory") ? [{ path: "/requests", label: "借用", icon: "request" }] : []),
   ...(moduleEnabled("vehicles") ? [{ path: "/vehicles", label: "车辆", icon: "asset" }] : []),
   ...(moduleEnabled("procurement") ? [{ path: "/procurement", label: "采购", icon: "inventory" }] : []),
   ...(hasScope("assets") && moduleEnabled("assets") ? [{ path: "/assets", label: "资产", icon: "asset" }] : []),

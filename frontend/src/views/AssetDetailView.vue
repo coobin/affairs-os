@@ -36,7 +36,6 @@ const actionForm = reactive({
 });
 
 const actionDefinitions: Record<string, { label: string; description: string }> = {
-  assign: { label: "办理领用", description: "将资产长期分配给一名员工。" },
   loan: { label: "临时借用", description: "借出资产并设置预计归还日期。" },
   extend: { label: "办理延期", description: "延长借用资产的预计归还日期。" },
   return: { label: "办理归还", description: "收回资产并恢复为在库状态。" },
@@ -47,7 +46,7 @@ const actionDefinitions: Record<string, { label: string; description: string }> 
 const availableActions = computed(() => {
   if (!asset.value) return [];
   const rules: Record<string, string[]> = {
-    available: ["assign", "loan", "transfer", "dispose"],
+    available: ["loan", "transfer", "dispose"],
     assigned: ["return", "transfer", "dispose"],
     loaned: ["extend", "return", "transfer", "dispose"],
     disposed: [],
@@ -364,7 +363,7 @@ onBeforeUnmount(clearImagePreviews);
         @close="modalOpen = false"
       >
         <form class="action-form" @submit.prevent="submitAction">
-          <label v-if="['assign', 'loan'].includes(actionType)">
+          <label v-if="actionType === 'loan'">
             <span>责任人 <b>*</b></span>
             <PersonSearchSelect v-model="actionForm.target_user_id" :users="lookups?.users || []" required />
           </label>

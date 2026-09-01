@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
 import { api, ApiError } from "../api";
 import AppIcon from "../components/AppIcon.vue";
@@ -17,7 +17,7 @@ const today = (() => {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 })();
-const form = reactive({ request_type: "assign", needed_at: today, expected_return_at: "", quantity: 1, reason: "" });
+const form = reactive({ needed_at: today, expected_return_at: "", reason: "" });
 const itemSearch = ref("");
 const selectedOption = ref<DeviceOption | null>(null);
 const searchFocused = ref(false);
@@ -33,7 +33,6 @@ const history = computed(() => requests.value.filter((item) => item.status !== "
 const searchableOptions = computed(() => {
   const query = itemSearch.value.trim().toLowerCase();
   return devices.value
-    .filter((item) => form.request_type === "assign" || item.item_type === "asset")
     .filter((item) => !query || `${item.name} ${item.description}`.toLowerCase().includes(query))
     .slice(0, 10);
 });
@@ -46,11 +45,14 @@ function formatDate(value: string | null, withTime = false) {
 async function load() {
   loading.value = true;
   try {
-    [requests.value, devices.value, myLoanedAssets.value] = await Promise.all([
+    const [loadedRequests, loadedDevices, loadedLoans] = await Promise.all([
       api<AssetRequest[]>(props.canManage && managerMode.value === "apply" ? "/requests/?mine=1" : "/requests/"),
       api<DeviceOption[]>("/requests/device-options/"),
       api<Asset[]>("/requests/my-loaned-assets/"),
     ]);
+    requests.value = loadedRequests;
+    devices.value = loadedDevices.filter((item) => item.item_type === "asset");
+    myLoanedAssets.value = loadedLoans;
   } finally { loading.value = false; }
 }
 
@@ -66,7 +68,6 @@ function chooseOption(option: DeviceOption) {
   selectedOption.value = option;
   itemSearch.value = option.name;
   searchFocused.value = false;
-  form.quantity = 1;
 }
 
 function clearOption() {
@@ -78,7 +79,7 @@ async function submit() {
   error.value = "";
   notice.value = "";
   if (!selectedOption.value) {
-    error.value = "请搜索并选择需要领用或借用的物品。";
+    error.value = "请搜索并选择需要借用的资产。";
     return;
   }
   saving.value = true;
@@ -86,13 +87,13 @@ async function submit() {
     await api("/requests/", {
       method: "POST",
       body: JSON.stringify({
-        request_type: form.request_type,
-        requested_item_type: selectedOption.value.item_type,
+        request_type: "loan",
+        requested_item_type: "asset",
         requested_name: selectedOption.value.name,
-        inventory_item: selectedOption.value.item_type === "inventory" ? selectedOption.value.item_id : null,
-        requested_quantity: selectedOption.value.item_type === "inventory" ? form.quantity : 1,
+        inventory_item: null,
+        requested_quantity: 1,
         needed_at: form.needed_at,
-        expected_return_at: form.request_type === "loan" ? form.expected_return_at : null,
+        expected_return_at: form.expected_return_at,
         reason: form.reason,
       }),
     });
@@ -126,44 +127,35 @@ async function fulfill(item: AssetRequest) {
 async function reject(item: AssetRequest) { await api(`/requests/${item.id}/reject/`, { method: "POST", body: JSON.stringify({}) }); await load(); }
 async function cancel(item: AssetRequest) { await api(`/requests/${item.id}/cancel/`, { method: "POST", body: JSON.stringify({}) }); await load(); }
 
-watch(() => form.request_type, () => {
-  if (form.request_type === "loan" && !form.needed_at) form.needed_at = today;
-  if (form.request_type === "loan" && selectedOption.value?.item_type === "inventory") clearOption();
-});
 onMounted(load);
 </script>
 
 <template>
   <div class="page request-page">
     <header class="page-intro request-intro">
-      <div><p class="eyebrow">领用借用服务台</p><h1>{{ isManaging ? "待分配物品" : "领用或借用" }}</h1></div>
+      <div><p class="eyebrow">借用服务台</p><h1>{{ isManaging ? "待处理借用申请" : "借用资产" }}</h1></div>
       <span class="request-counter"><strong>{{ pending.length }}</strong><small>{{ isManaging ? "待处理" : "进行中" }}</small></span>
     </header>
 
     <nav v-if="canManage" class="request-mode-tabs" aria-label="申请与处理切换">
       <button :class="{ active: managerMode === 'manage' }" @click="switchMode('manage')"><AppIcon name="request" :size="18" />处理申请</button>
-      <button :class="{ active: managerMode === 'apply' }" @click="switchMode('apply')"><AppIcon name="plus" :size="18" />我要领用 / 借用</button>
+      <button :class="{ active: managerMode === 'apply' }" @click="switchMode('apply')"><AppIcon name="plus" :size="18" />我要借用</button>
     </nav>
 
     <div v-if="loading" class="loading-block">正在读取申请…</div>
     <div v-else class="request-workspace" :class="{ managerial: isManaging }">
       <form v-if="!isManaging" class="request-form" @submit.prevent="submit">
         <header><p class="eyebrow">新申请</p><h2>你需要什么？</h2></header>
-        <div class="request-type-switch">
-          <button type="button" :class="{ active: form.request_type === 'assign' }" @click="form.request_type = 'assign'"><AppIcon name="asset" :size="20" /><span><strong>领用</strong><small>资产或库存物品</small></span></button>
-          <button type="button" :class="{ active: form.request_type === 'loan' }" @click="form.request_type = 'loan'"><AppIcon name="clock" :size="20" /><span><strong>借用</strong><small>仅限资产，按期归还</small></span></button>
-        </div>
         <label class="request-item-search">
-          <span>{{ form.request_type === 'loan' ? '搜索资产' : '搜索资产或库存物品' }}</span>
-          <div class="request-search-input"><AppIcon name="search" :size="18" /><input v-model="itemSearch" autocomplete="off" :placeholder="form.request_type === 'loan' ? '输入笔记本、显示器等' : '输入设备、鼠标、耗材等'" required @focus="searchFocused = true" @input="selectedOption = null" /><button v-if="itemSearch" type="button" aria-label="清空选择" @click="clearOption"><AppIcon name="close" :size="16" /></button></div>
-          <div v-if="searchFocused && !selectedOption" class="request-search-results"><button v-for="option in searchableOptions" :key="option.key" type="button" @mousedown.prevent="chooseOption(option)"><span><strong>{{ option.name }}</strong><small>{{ option.description }}</small></span><b>{{ option.available_count }} {{ option.unit }}</b></button><p v-if="!searchableOptions.length">没有找到当前可申请的物品</p></div>
-          <small v-if="selectedOption" class="selected-request-item"><b>{{ selectedOption.item_type === 'asset' ? '资产' : '库存' }}</b>{{ selectedOption.description }} · 可申请 {{ selectedOption.available_count }} {{ selectedOption.unit }}</small>
+          <span>搜索资产</span>
+          <div class="request-search-input"><AppIcon name="search" :size="18" /><input v-model="itemSearch" autocomplete="off" placeholder="输入笔记本、显示器等" required @focus="searchFocused = true" @input="selectedOption = null" /><button v-if="itemSearch" type="button" aria-label="清空选择" @click="clearOption"><AppIcon name="close" :size="16" /></button></div>
+          <div v-if="searchFocused && !selectedOption" class="request-search-results"><button v-for="option in searchableOptions" :key="option.key" type="button" @mousedown.prevent="chooseOption(option)"><span><strong>{{ option.name }}</strong><small>{{ option.description }}</small></span><b>{{ option.available_count }} {{ option.unit }}</b></button><p v-if="!searchableOptions.length">没有找到当前可借用的资产</p></div>
+          <small v-if="selectedOption" class="selected-request-item"><b>资产</b>{{ selectedOption.description }} · 可借用 {{ selectedOption.available_count }} {{ selectedOption.unit }}</small>
         </label>
-        <label v-if="selectedOption?.item_type === 'inventory'"><span>领用数量</span><input v-model.number="form.quantity" type="number" min="1" :max="selectedOption.available_count" required /></label>
-        <label><span>{{ form.request_type === 'loan' ? '借用日期' : '领用时间' }}</span><input v-model="form.needed_at" type="date" :min="today" required /></label>
-        <label v-if="form.request_type === 'loan'"><span>预计归还 <b>*</b></span><input v-model="form.expected_return_at" type="date" :min="form.needed_at || today" required /></label>
-        <label><span>用途说明<template v-if="form.request_type === 'assign'">（选填）</template><b v-else>*</b></span><textarea v-model="form.reason" rows="3" :required="form.request_type === 'loan'" :placeholder="form.request_type === 'assign' ? '可选填领用用途' : '请说明借用用途'"></textarea></label>
-        <p v-if="!devices.length" class="form-error">当前没有可申请的资产或库存物品。</p>
+        <label><span>借用日期</span><input v-model="form.needed_at" type="date" :min="today" required /></label>
+        <label><span>预计归还 <b>*</b></span><input v-model="form.expected_return_at" type="date" :min="form.needed_at || today" required /></label>
+        <label><span>用途说明 <b>*</b></span><textarea v-model="form.reason" rows="3" required placeholder="请说明借用用途"></textarea></label>
+        <p v-if="!devices.length" class="form-error">当前没有可借用的资产。</p>
         <p v-if="error" class="form-error">{{ error }}</p><p v-if="notice" class="form-success">{{ notice }}</p>
         <button class="primary-button full" :disabled="saving || !devices.length || !selectedOption">{{ saving ? "正在提交…" : "提交申请" }}</button>
       </form>
@@ -173,12 +165,12 @@ onMounted(load);
         <div v-if="!pending.length" class="empty-state">暂无待处理申请。</div>
         <article v-for="item in pending" :key="item.id" class="request-ticket">
           <span class="ticket-type">{{ item.request_type_label }} · {{ item.requested_item_type_label }}</span>
-          <div class="ticket-main"><strong>{{ item.requested_name }}<template v-if="item.requested_item_type === 'inventory'"> × {{ item.requested_quantity }}</template></strong><p v-if="isManaging">{{ item.requester_name }}<span v-if="item.department_name"> · {{ item.department_name }}</span><span v-if="item.reason"> · {{ item.reason }}</span></p><p v-else-if="item.reason">{{ item.reason }}</p><small>领用 {{ formatDate(item.needed_at) }}<template v-if="item.expected_return_at"> · 预计 {{ formatDate(item.expected_return_at) }} 归还</template></small></div>
+          <div class="ticket-main"><strong>{{ item.requested_name }}<template v-if="item.requested_item_type === 'inventory'"> × {{ item.requested_quantity }}</template></strong><p v-if="isManaging">{{ item.requester_name }}<span v-if="item.department_name"> · {{ item.department_name }}</span><span v-if="item.reason"> · {{ item.reason }}</span></p><p v-else-if="item.reason">{{ item.reason }}</p><small>{{ item.request_type === 'loan' ? '借用' : '领用' }} {{ formatDate(item.needed_at) }}<template v-if="item.expected_return_at"> · 预计 {{ formatDate(item.expected_return_at) }} 归还</template></small></div>
           <time>{{ formatDate(item.created_at, true) }}</time>
           <div v-if="isManaging" class="allocation-panel">
             <button v-if="item.requested_item_type === 'inventory'" class="primary-button" @click="fulfill(item)">确认发放 {{ item.requested_quantity }} 件</button>
             <button v-else-if="!candidates[item.id]" class="secondary-button" @click="loadCandidates(item)">选择具体资产</button>
-            <template v-else-if="candidates[item.id].length"><select v-model="selection[item.id]"><option v-for="asset in candidates[item.id]" :key="asset.id" :value="asset.id">{{ asset.asset_tag }} · {{ asset.brand }} {{ asset.model_name }} · {{ asset.location_name || '未设地点' }}</option></select><button class="primary-button" @click="fulfill(item)">确认分配</button></template>
+            <template v-else-if="candidates[item.id].length"><select v-model="selection[item.id]"><option v-for="asset in candidates[item.id]" :key="asset.id" :value="asset.id">{{ asset.asset_tag }} · {{ asset.brand }} {{ asset.model_name }} · {{ asset.location_name || '未设地点' }}</option></select><button class="primary-button" @click="fulfill(item)">{{ item.request_type === 'loan' ? '确认借用' : '确认分配' }}</button></template>
             <span v-else class="form-error">当前已无可分配资产。</span>
             <button class="text-button reject-link" @click="reject(item)">驳回</button>
           </div>
