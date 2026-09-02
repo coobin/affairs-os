@@ -6,7 +6,7 @@ import hashlib
 import logging
 import re
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -14,6 +14,13 @@ from django.db import transaction
 
 from ldap3 import ALL, Connection, Server, SUBTREE
 
+from .department_directory import (
+    DEPARTMENT_MERGE_TARGET,
+    allocate_department_code,
+    canonical_department_name,
+    create_department,
+    is_standard_department_code,
+)
 from .models import Department, EmployeeProfile
 
 
@@ -272,14 +279,18 @@ class LdapDirectorySyncService:
         result: LdapSyncResult,
         dry_run: bool,
     ) -> dict[str, Department]:
-        pending = {record.source_id: record for record in records}
+        prepared_records, alias_to_source, alias_to_local = self._prepare_department_records(records)
+        pending = {record.source_id: record for record in prepared_records}
         existing_by_source_id = {
             department.ldap_department_id: department
             for department in Department.objects.exclude(ldap_department_id__isnull=True)
             if department.ldap_department_id
         }
         used_department_ids: set[int] = set()
-        resolved: dict[str, Department] = {}
+        resolved: dict[str, Department] = dict(alias_to_local)
+        used_department_ids.update(
+            department.pk for department in alias_to_local.values() if department.pk
+        )
 
         while pending:
             progressed = False
@@ -297,32 +308,41 @@ class LdapDirectorySyncService:
                     )
 
                 if department is None:
-                    code = self._department_code(source_id)
-                    department = Department(
-                        name=record.name[:100],
-                        code=code,
-                        parent=parent,
-                        is_active=True,
-                        ldap_department_id=source_id,
-                        ldap_dn=record.dn[:512],
-                    )
                     if dry_run:
                         # 让后续预览中的子部门能看到一个稳定的临时父级 ID。
+                        department = Department(
+                            name=record.name[:100],
+                            code=f"263-{abs(len(resolved) + 1)}",
+                            parent=parent,
+                            is_active=True,
+                            ldap_department_id=source_id,
+                            ldap_dn=record.dn[:512],
+                        )
                         department.pk = -(len(resolved) + 1)
                     else:
-                        department.save()
+                        department = create_department(
+                            name=record.name[:100],
+                            parent=parent,
+                            is_active=True,
+                            ldap_department_id=source_id,
+                            ldap_dn=record.dn[:512],
+                        )
                     result.departments_created += 1
                 else:
+                    code_needs_update = not is_standard_department_code(department.code)
                     changed = (
                         department.name != record.name[:100]
                         or department.parent_id != (parent.pk if parent else None)
                         or not department.is_active
                         or department.ldap_department_id != source_id
                         or department.ldap_dn != record.dn[:512]
+                        or code_needs_update
                     )
                     if changed:
                         result.departments_updated += 1
                     if not dry_run:
+                        if code_needs_update:
+                            department.code = allocate_department_code()
                         department.name = record.name[:100]
                         department.parent = parent
                         department.is_active = True
@@ -332,6 +352,7 @@ class LdapDirectorySyncService:
                             update_fields=[
                                 "name",
                                 "parent",
+                                "code",
                                 "is_active",
                                 "ldap_department_id",
                                 "ldap_dn",
@@ -354,7 +375,60 @@ class LdapDirectorySyncService:
                 cycle = ", ".join(sorted(pending))
                 raise LdapDirectoryError(f"LDAP 部门层级存在循环，无法同步：{cycle}。")
 
+        for alias_source_id, canonical_source_id in alias_to_source.items():
+            department = resolved.get(canonical_source_id)
+            if department is not None:
+                resolved[alias_source_id] = department
+
         return resolved
+
+    def _prepare_department_records(
+        self,
+        records: tuple[LdapDepartmentRecord, ...],
+    ) -> tuple[
+        tuple[LdapDepartmentRecord, ...],
+        dict[str, str],
+        dict[str, Department],
+    ]:
+        """把已合并的旧部门映射到人力资源部，避免 LDAP 再次创建旧部门。"""
+
+        target_records = [
+            record
+            for record in records
+            if record.name.strip() == DEPARTMENT_MERGE_TARGET
+        ]
+        local_targets = list(
+            Department.objects.filter(name=DEPARTMENT_MERGE_TARGET).order_by("id")
+        )
+        target_source_id = target_records[0].source_id if target_records else None
+        local_target = local_targets[0] if local_targets else None
+        alias_to_source: dict[str, str] = {}
+        alias_to_local: dict[str, Department] = {}
+
+        for record in records:
+            canonical_name = canonical_department_name(record.name)
+            if canonical_name == record.name.strip():
+                continue
+            if target_source_id and record.source_id != target_source_id:
+                alias_to_source[record.source_id] = target_source_id
+            elif local_target is not None:
+                alias_to_local[record.source_id] = local_target
+
+        prepared = []
+        for record in records:
+            if record.source_id in alias_to_source or record.source_id in alias_to_local:
+                continue
+            parent_source_id = alias_to_source.get(
+                record.parent_source_id,
+                record.parent_source_id,
+            )
+            prepared.append(
+                replace(
+                    record,
+                    parent_source_id=parent_source_id,
+                )
+            )
+        return tuple(prepared), alias_to_source, alias_to_local
 
     def _match_legacy_department(
         self,
@@ -532,11 +606,6 @@ class LdapDirectorySyncService:
 
         suffix = hashlib.sha1(candidate.encode("utf-8")).hexdigest()[:7]
         return f"{candidate[:24]}-{suffix}"
-
-    @staticmethod
-    def _department_code(source_id: str) -> str:
-        return f"LDAP-{hashlib.sha256(source_id.encode('utf-8')).hexdigest()[:27]}"
-
 
 def search_snapshot(snapshot: LdapSnapshot, query: str) -> tuple[list[LdapEmployeeRecord], list[LdapDepartmentRecord]]:
     """按姓名、UID、工号或部门 ID 查询快照，供运维核验使用。"""

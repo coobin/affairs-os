@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from assets.department_directory import create_department
 from assets.models import Asset, Department, EmployeeProfile
 
 User = get_user_model()
@@ -49,14 +50,35 @@ class Command(BaseCommand):
                     if parent_source_id in remaining:
                         continue
                     parent_source_id = ""
-                department, _ = Department.objects.update_or_create(
-                    code=f"263-{source_id}"[:32],
-                    defaults={
-                        "name": str(item["name"]).strip()[:100],
-                        "parent": department_mapping.get(parent_source_id),
-                        "is_active": True,
-                    },
-                )
+                department_name = str(item["name"]).strip()[:100]
+                parent = department_mapping.get(parent_source_id)
+                if source_id.isdecimal() and len(f"263-{source_id}") <= 32:
+                    department, _ = Department.objects.update_or_create(
+                        code=f"263-{source_id}",
+                        defaults={
+                            "name": department_name,
+                            "parent": parent,
+                            "is_active": True,
+                        },
+                    )
+                else:
+                    department = Department.objects.filter(
+                        ldap_department_id=source_id
+                    ).first()
+                    if department is None:
+                        department = create_department(
+                            name=department_name,
+                            parent=parent,
+                            is_active=True,
+                            ldap_department_id=source_id,
+                        )
+                    else:
+                        department.name = department_name
+                        department.parent = parent
+                        department.is_active = True
+                        department.save(
+                            update_fields=["name", "parent", "is_active", "updated_at"]
+                        )
                 department_mapping[source_id] = department
                 del remaining[source_id]
                 progressed = True

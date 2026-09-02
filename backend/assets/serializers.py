@@ -41,6 +41,10 @@ from .models import (
     VehicleDispatch,
     VehicleExpense,
 )
+from .department_directory import (
+    DEPARTMENT_MERGE_SOURCE_NAMES,
+    create_department,
+)
 from .permissions import HIDDEN_SYSTEM_USERNAME, is_hidden_superuser, management_scopes
 from .services import align_asset_tag, generate_asset_tag, perform_asset_action
 
@@ -181,9 +185,30 @@ class EmailNotificationSerializer(serializers.ModelSerializer):
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
+    def create(self, validated_data):
+        return create_department(**validated_data)
+
+    def validate(self, attrs):
+        name = str(attrs.get("name", "")).strip()
+        if name in DEPARTMENT_MERGE_SOURCE_NAMES and self.instance is None:
+            raise serializers.ValidationError(
+                {"name": "该部门名称已纳入人力资源部，不能重新建立。"}
+            )
+        if self.instance and self.instance.name in DEPARTMENT_MERGE_SOURCE_NAMES:
+            if "name" in attrs and name != self.instance.name:
+                raise serializers.ValidationError(
+                    {"name": "已并入人力资源部的历史部门不能重新改名启用。"}
+                )
+            if attrs.get("is_active") is True:
+                raise serializers.ValidationError(
+                    {"is_active": "该历史部门已并入人力资源部，不能重新启用。"}
+                )
+        return attrs
+
     class Meta:
         model = Department
         fields = ("id", "name", "code", "parent_id", "is_active")
+        read_only_fields = ("id", "code")
 
 
 class LocationSerializer(serializers.ModelSerializer):

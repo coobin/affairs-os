@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from assets.department_directory import create_department
 from assets.models import AssetCategory, Department, Location
 
 User = get_user_model()
@@ -28,11 +29,12 @@ class Command(BaseCommand):
             admin.set_unusable_password()
         admin.save()
 
-        for code, name in [
-            ("ADM", "行政部"),
-            ("IT", "信息技术部"),
-        ]:
-            Department.objects.update_or_create(code=code, defaults={"name": name})
+        human_resources = Department.objects.filter(name="人力资源部").order_by("id").first()
+        if human_resources is None:
+            create_department(name="人力资源部", is_active=True)
+        elif not human_resources.is_active:
+            human_resources.is_active = True
+            human_resources.save(update_fields=["is_active", "updated_at"])
 
         for code, name, kind, address in [
             ("MAIN-OFFICE", "总部办公室", "office", ""),

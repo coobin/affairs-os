@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from assets.department_directory import create_department
 from assets.models import Asset, AssetCategory, AssetEvent, Department, EmployeeProfile, Location
 
 User = get_user_model()
@@ -33,17 +34,18 @@ class Command(BaseCommand):
 
         departments = {}
         for code, name in [
-            ("ADM", "行政部"),
-            ("IT", "信息技术部"),
+            ("HR", "人力资源部"),
             ("MKT", "市场部"),
             ("FIN", "财务部"),
         ]:
-            departments[code], _ = Department.objects.get_or_create(code=code, defaults={"name": name})
+            departments[code] = Department.objects.filter(name=name).order_by("id").first()
+            if departments[code] is None:
+                departments[code] = create_department(name=name, is_active=True)
 
         employees = [
             ("E1001", "linxia", "林", "夏", "MKT"),
             ("E1002", "chenmo", "陈", "默", "FIN"),
-            ("E1003", "zhouyu", "周", "宇", "IT"),
+            ("E1003", "zhouyu", "周", "宇", "HR"),
         ]
         users = {}
         for employee_no, username, last_name, first_name, department_code in employees:
