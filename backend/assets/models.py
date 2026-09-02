@@ -16,6 +16,14 @@ class TimeStampedModel(models.Model):
 class Department(TimeStampedModel):
     name = models.CharField("部门名称", max_length=100)
     code = models.CharField("部门编码", max_length=32, unique=True)
+    ldap_department_id = models.CharField(
+        "LDAP 部门 ID",
+        max_length=128,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+    ldap_dn = models.CharField("LDAP DN", max_length=512, blank=True)
     parent = models.ForeignKey(
         "self",
         verbose_name="上级部门",
@@ -65,6 +73,14 @@ class EmployeeProfile(TimeStampedModel):
         related_name="employee_profile",
     )
     employee_no = models.CharField("工号", max_length=32, unique=True)
+    ldap_uid = models.CharField(
+        "LDAP UID",
+        max_length=150,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+    ldap_dn = models.CharField("LDAP DN", max_length=512, blank=True)
     department = models.ForeignKey(
         Department,
         verbose_name="部门",

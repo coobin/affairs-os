@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from celery.schedules import crontab
 from pathlib import Path
@@ -126,9 +127,26 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080")
 LOCAL_LOGIN_USERNAME = os.getenv("LOCAL_LOGIN_USERNAME", "admin").strip()
 DJANGO_SUPERUSER_USERNAME = os.getenv("DJANGO_SUPERUSER_USERNAME", "admin").strip()
 
+# LDAP 目录由 xrxs2ldap 写入，AffairsOS 只读同步人员和部门，不参与密码认证。
+# 生产环境中的绑定密码只放在服务器 .env，不进入代码仓库。
+LDAP_URI = os.getenv("LDAP_URI", "").strip()
+LDAP_BIND_DN = os.getenv("LDAP_BIND_DN", "").strip()
+LDAP_BIND_PASSWORD = os.getenv("LDAP_BIND_PASSWORD", "")
+LDAP_BASE_DN = os.getenv("LDAP_BASE_DN", "dc=chencytech,dc=com").strip()
+LDAP_PEOPLE_OU = os.getenv("LDAP_PEOPLE_OU", "ou=people").strip()
+LDAP_GROUPS_OU = os.getenv("LDAP_GROUPS_OU", "ou=groups").strip()
+
 
 def env_bool(name, default=False):
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+LDAP_CONNECT_TIMEOUT_SECONDS = int(os.getenv("LDAP_CONNECT_TIMEOUT_SECONDS", "10"))
+LDAP_SYNC_ENABLED = env_bool("LDAP_SYNC_ENABLED", False)
+LDAP_SYNC_INTERVAL_MINUTES = max(5, int(os.getenv("LDAP_SYNC_INTERVAL_MINUTES", "60")))
+LDAP_SYNC_CREATE_INACTIVE_USERS = env_bool("LDAP_SYNC_CREATE_INACTIVE_USERS", False)
+LDAP_PEOPLE_BASE_DN = f"{LDAP_PEOPLE_OU},{LDAP_BASE_DN}"
+LDAP_GROUPS_BASE_DN = f"{LDAP_GROUPS_OU},{LDAP_BASE_DN}"
 
 
 EMAIL_NOTIFICATIONS_ENABLED = env_bool("EMAIL_NOTIFICATIONS_ENABLED", False)
@@ -168,6 +186,11 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/10"),
     },
 }
+if LDAP_SYNC_ENABLED:
+    CELERY_BEAT_SCHEDULE["sync-ldap-directory"] = {
+        "task": "assets.tasks.sync_ldap_directory",
+        "schedule": timedelta(minutes=LDAP_SYNC_INTERVAL_MINUTES),
+    }
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", str(not DEBUG)).lower() == "true"

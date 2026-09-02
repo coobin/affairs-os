@@ -82,6 +82,19 @@ def retry_pending_email_notifications():
 
 
 @shared_task
+def sync_ldap_directory():
+    """按配置把 xrxs2ldap 写入的 LDAP 目录同步到本地人员和部门。"""
+    if not settings.LDAP_SYNC_ENABLED:
+        return {"status": "disabled"}
+
+    from .ldap_directory import LdapDirectorySyncService
+
+    result = LdapDirectorySyncService().sync()
+    logger.info("LDAP directory sync finished: %s", result.as_dict())
+    return result.as_dict()
+
+
+@shared_task
 def send_daily_operational_notifications():
     today = timezone.localdate()
     Contract.objects.filter(
