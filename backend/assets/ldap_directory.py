@@ -100,10 +100,17 @@ class LdapDirectoryClient:
     def fetch_snapshot(self) -> LdapSnapshot:
         connection = self._connect()
         try:
-            return LdapSnapshot(
-                departments=tuple(self._fetch_departments(connection)),
-                employees=tuple(self._fetch_employees(connection)),
-            )
+            departments = tuple(self._fetch_departments(connection))
+            employees = tuple(self._fetch_employees(connection))
+            if not departments:
+                raise LdapDirectoryError(
+                    "LDAP 未读取到 xrxs2ldap 管理的部门组，为避免清空本地部门，已拒绝同步。"
+                )
+            if not employees:
+                raise LdapDirectoryError(
+                    "LDAP 未读取到人员，为避免清空本地人员，已拒绝同步。"
+                )
+            return LdapSnapshot(departments=departments, employees=employees)
         finally:
             connection.unbind()
 
@@ -139,12 +146,14 @@ class LdapDirectoryClient:
 
     def _fetch_departments(self, connection: Connection) -> list[LdapDepartmentRecord]:
         try:
-            connection.search(
+            searched = connection.search(
                 search_base=settings.LDAP_GROUPS_BASE_DN,
                 search_filter="(objectClass=posixGroup)",
                 search_scope=SUBTREE,
                 attributes=self._GROUP_ATTRIBUTES,
             )
+            if not searched:
+                raise LdapDirectoryError("LDAP 部门组查询未成功。")
         except Exception as exc:
             raise LdapDirectoryError("读取 LDAP 部门组失败，请检查部门组基准 DN。") from exc
 
@@ -172,12 +181,14 @@ class LdapDirectoryClient:
 
     def _fetch_employees(self, connection: Connection) -> list[LdapEmployeeRecord]:
         try:
-            connection.search(
+            searched = connection.search(
                 search_base=settings.LDAP_PEOPLE_BASE_DN,
                 search_filter="(&(objectClass=inetOrgPerson)(uid=*))",
                 search_scope=SUBTREE,
                 attributes=self._PEOPLE_ATTRIBUTES,
             )
+            if not searched:
+                raise LdapDirectoryError("LDAP 人员查询未成功。")
         except Exception as exc:
             raise LdapDirectoryError("读取 LDAP 人员失败，请检查人员基准 DN。") from exc
 
