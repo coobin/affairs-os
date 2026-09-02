@@ -15,6 +15,7 @@ from django.db import transaction
 from ldap3 import ALL, Connection, Server, SUBTREE
 
 from .department_directory import (
+    DEPARTMENT_CODE_PREFIX,
     DEPARTMENT_MERGE_TARGET,
     allocate_department_code,
     canonical_department_name,
@@ -312,7 +313,7 @@ class LdapDirectorySyncService:
                         # 让后续预览中的子部门能看到一个稳定的临时父级 ID。
                         department = Department(
                             name=record.name[:100],
-                            code=f"263-{abs(len(resolved) + 1)}",
+                            code=f"{DEPARTMENT_CODE_PREFIX}{abs(len(resolved) + 1):03d}",
                             parent=parent,
                             is_active=True,
                             ldap_department_id=source_id,

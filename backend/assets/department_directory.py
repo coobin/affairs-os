@@ -8,8 +8,8 @@ from uuid import uuid4
 from django.db import transaction
 
 
-DEPARTMENT_CODE_PREFIX = "263-"
-DEPARTMENT_CODE_PATTERN = re.compile(r"^263-(?P<number>[0-9]+)$")
+DEPARTMENT_CODE_PREFIX = "DEP-"
+DEPARTMENT_CODE_PATTERN = re.compile(r"^DEP-(?P<number>[0-9]{3,})$")
 
 # 这些名称在当前系统中都代表已经并入人力资源部的旧部门。
 DEPARTMENT_MERGE_TARGET = "人力资源部"
@@ -37,14 +37,14 @@ def department_code_number(code: str | None) -> int | None:
 
 
 def next_department_code(existing_codes) -> str:
-    """根据已有部门编码计算下一个 263-数字编码。"""
+    """根据已有部门编码计算下一个 DEP-三位数字编码。"""
 
     numbers = [
         number
         for code in existing_codes
         if (number := department_code_number(code)) is not None
     ]
-    return f"{DEPARTMENT_CODE_PREFIX}{max(numbers, default=0) + 1}"
+    return f"{DEPARTMENT_CODE_PREFIX}{max(numbers, default=0) + 1:03d}"
 
 
 def allocate_department_code() -> str:

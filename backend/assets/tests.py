@@ -1107,7 +1107,7 @@ class PeopleImportTests(TestCase):
         profile = EmployeeProfile.objects.get(user=user)
         self.assertFalse(user.has_usable_password())
         self.assertEqual(profile.department.name, "信息技术部")
-        self.assertEqual(Department.objects.get(code="263-11").parent.code, "263-10")
+        self.assertEqual(Department.objects.get(code="DEP-011").parent.code, "DEP-010")
 
     def test_import_people_syncs_assigned_asset_department(self):
         old_department = Department.objects.create(name="旧部门", code="OLD")

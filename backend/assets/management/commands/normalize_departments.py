@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from django.apps import apps
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -9,14 +11,12 @@ from assets.department_directory import (
     DEPARTMENT_CODE_PREFIX,
     DEPARTMENT_MERGE_SOURCE_NAMES,
     DEPARTMENT_MERGE_TARGET,
-    department_code_number,
-    is_standard_department_code,
 )
 from assets.models import Department
 
 
 class Command(BaseCommand):
-    help = "将旧部门并入人力资源部，并把所有部门编码统一为 263-数字。"
+    help = "将旧部门并入人力资源部，并把所有部门编码统一为 DEP-三位数字。"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -88,21 +88,27 @@ class Command(BaseCommand):
         return department_updates
 
     def _normalize_codes(self, departments):
-        used_numbers = {
-            number
-            for department in departments
-            if (number := department_code_number(department.code)) is not None
-        }
-        next_number = max(used_numbers, default=0) + 1
         changed = []
-        for department in departments:
-            if is_standard_department_code(department.code):
+        assignments = [
+            (
+                department,
+                f"{DEPARTMENT_CODE_PREFIX}{index:03d}",
+                department.code != f"{DEPARTMENT_CODE_PREFIX}{index:03d}",
+            )
+            for index, department in enumerate(departments, start=1)
+        ]
+
+        # 先换成临时唯一编码，避免例如旧的 DEP-002 与新的 DEP-001
+        # 互换时触发 Department.code 的唯一约束。
+        for department, _, needs_update in assignments:
+            if not needs_update:
                 continue
-            while next_number in used_numbers:
-                next_number += 1
-            code = f"{DEPARTMENT_CODE_PREFIX}{next_number}"
-            used_numbers.add(next_number)
-            next_number += 1
+            department.code = f"TMP-{uuid4().hex[:20]}"
+            department.save(update_fields=["code", "updated_at"])
+
+        for department, code, needs_update in assignments:
+            if not needs_update:
+                continue
             department.code = code
             department.save(update_fields=["code", "updated_at"])
             changed.append((department.name, code))
@@ -160,7 +166,7 @@ class Command(BaseCommand):
                     + "。"
                 )
             else:
-                self.stdout.write("编码调整：所有部门已经符合 263-数字规则。")
+                self.stdout.write("编码调整：所有部门已经符合 DEP-三位数字规则。")
 
             if dry_run:
                 transaction.set_rollback(True)

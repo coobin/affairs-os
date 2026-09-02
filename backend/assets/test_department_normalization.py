@@ -168,8 +168,8 @@ class DepartmentNormalizationTests(TestCase):
         )
 
         codes = list(Department.objects.values_list("code", flat=True))
-        self.assertTrue(all(re.fullmatch(r"263-[0-9]+", code) for code in codes))
-        self.assertEqual(Department.objects.get(name="财务部").code, "263-99")
+        self.assertTrue(all(re.fullmatch(r"DEP-[0-9]{3,}", code) for code in codes))
+        self.assertEqual(Department.objects.get(name="财务部").code, "DEP-004")
 
     def test_dry_run_does_not_change_departments(self):
         before = dict(Department.objects.values_list("id", "code"))

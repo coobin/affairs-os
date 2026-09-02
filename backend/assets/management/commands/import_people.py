@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from assets.department_directory import create_department
+from assets.department_directory import DEPARTMENT_CODE_PREFIX, create_department
 from assets.models import Asset, Department, EmployeeProfile
 
 User = get_user_model()
@@ -52,9 +52,14 @@ class Command(BaseCommand):
                     parent_source_id = ""
                 department_name = str(item["name"]).strip()[:100]
                 parent = department_mapping.get(parent_source_id)
-                if source_id.isdecimal() and len(f"263-{source_id}") <= 32:
+                department_code = (
+                    f"{DEPARTMENT_CODE_PREFIX}{int(source_id):03d}"
+                    if source_id.isdecimal()
+                    else ""
+                )
+                if department_code and len(department_code) <= 32:
                     department, _ = Department.objects.update_or_create(
-                        code=f"263-{source_id}",
+                        code=department_code,
                         defaults={
                             "name": department_name,
                             "parent": parent,
